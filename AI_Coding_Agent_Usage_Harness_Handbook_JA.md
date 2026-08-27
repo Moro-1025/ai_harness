@@ -1,8 +1,8 @@
 ---
 title: "AIコーディングエージェント活用ハーネス・ハンドブック"
-subtitle: "Codexなどを安全・再現可能・検証可能に運用するための設計思想、判断基準、チェックリスト、実装テンプレート"
-version: "1.0"
-updated: "2026-08-26"
+subtitle: "Codexなどを安全・再現可能・検証可能に運用するための設計思想、判断基準、実装テンプレート"
+version: "1.1"
+updated: "2026-08-27"
 language: "ja"
 ---
 
@@ -10,6 +10,118 @@ language: "ja"
 
 > CodexなどのAIコーディングエージェントを、単なる「コード生成ツール」ではなく、  
 > **権限・コンテキスト・変更範囲・検証・証拠・再実行性を管理された開発プロセス**として運用するための実務ハンドブック。
+
+---
+
+## シリーズ案内
+
+本シリーズは、次の2冊で構成します。
+
+- **[AIエージェント開発ハンドブック](AI_Agent_Development_Handbook_JA_v1.1.md)**  
+  自作するAIエージェントシステムの共通設計原則を扱い、本シリーズの共通原則・用語の正本とします。
+- **本書: AIコーディングエージェント活用ハーネス・ハンドブック**  
+  Codexなどの既成コーディングエージェントへ、共通原則をRepository、Git、CI、権限、Session運用として適用します。
+
+Codexは一貫した具体例として使用しますが、本書の共通原則はClaude Code、Cursor系、その他のローカル・クラウド型コーディングエージェントへ読み替えられます。
+
+---
+
+## Version 1.1の主な変更
+
+- 各章を「共通原則」「製品に応じて実装」「Codexでの実装例」に分類した
+- 個人、Team、CI、Multi-Agent、Security Audit向けの読書ルートを追加した
+- 制御を行動誘導、運用統制、Agentから独立した強制境界へ段階化した
+- Agent生成証拠、Trusted CI証拠、人間確認を分離し、Riskに応じた独立性を追加した
+- Session ArtifactのGit管理、Retention、Size、Secret、PII、Access、Immutable Audit方針を追加した
+- Reviewerの独立性を、Fresh ContextだけでなくClean Checkout、固定Commit、read-only、独立再実行まで具体化した
+- 別製品へ読み替えるためのCapability確認表を追加した
+- 共通の通し事例と、リスク別の適用レベルを追加した
+
+---
+
+## 読者別の読書ルート
+
+| 目的 | 最初に読む範囲 |
+|---|---|
+| 個人で最小構成を導入する | 中核原則 → 第1章 → 第2章 → 第3章 → 第4章 → 第8章 → 第10章 → 第15章 |
+| Teamで安全に運用する | 上記 + 第5章 → 第6章 → 第7章 → 第9章 → 第11章 → 第14章 |
+| CIで非対話実行する | 第3章 → 第5章 → 第6章 → 第10章 → 第12章 → 第13章 |
+| 複数Agentを統合する | 第8章 → 第9章 → 第11章 → 第13章 → 第14章 |
+| Security Auditを行う | 第2章 → 第6章 → 第7章 → 第9章 → 第10章 → 第12章 → 第14章 → 付録D |
+| 既存Harnessを改善する | 第13章 → 第14章 → 第15章 → 付録C → 付録G |
+| Codexを独自UIへ組み込む | 第12章 → 第13章 → 第16章 |
+
+---
+
+## リスク別の適用レベル
+
+| レベル | 代表例 | 例として必要な統制 |
+|---|---|---|
+| 低リスク | 読取り、要約、設計案、下書きReview | read-only、Scope、基本Log、Completion Report |
+| 中リスク | Code変更、可逆な設定変更、内部BranchへのCommit | Worktree / Branch、verify Script、Execution Budget、Diff Review、Rollback |
+| 高リスク | Production、外部送信、権限、Credential、Release、金銭 | Agentから独立した境界、Trusted CI、Human Gate、Protected Branch、監査証拠 |
+
+RiskはModelの自信度ではなく、Blast Radius、可逆性、Credential、外部副作用、データ機密性、検知可能性から判定します。
+
+---
+
+## 分類ラベルの読み方
+
+途中の章だけを読んでも区別できるよう、各章の冒頭へ次の分類を付けます。
+
+- **共通原則:** 製品に関係なく成立するProject Harnessの責任
+- **製品に応じて実装:** 同じ責任を持つ機能を、利用製品のCapabilityへ読み替える箇所
+- **Codexでの実装例:** Codex固有の設定、CLI、App Server、機能名を用いた具体例
+
+Codex固有の機能が存在しない製品では、同じ名前を探すのではなく、同じ責任を満たせるかを確認します。
+
+---
+
+## 共通用語
+
+共通用語の完全な正本は、AIエージェント開発ハンドブックの付録Dです。本書でも主要語を同じ定義で再掲します。
+
+| 用語 | 本シリーズでの意味 |
+|---|---|
+| ハーネス(Harness) | モデルの周囲で、コンテキスト、ツール、権限、状態、検証、評価、可観測性、コスト、回復を管理する実行・運用層 |
+| タスク契約(Task Contract) | 目的、期待状態、範囲、禁止事項、完了条件、必要証拠、停止条件を開始前に固定した契約 |
+| 完了条件(Completion Criteria) | タスクを終了してよいと判定する、観測可能な条件 |
+| 証拠(Evidence) | 完了条件を満たしたことを確認するための、コマンド結果、差分、ログ、テスト、観測記録など |
+| 実行予算(Execution Budget) | Step、時間、Tool Call、費用、再試行、並列数などの実行上限 |
+| 検証(Verification) | 特定の出力・変更・事後条件が期待どおりかを確認する処理 |
+| 評価(Evaluation) | 代表タスク集合を使い、システム品質を比較・測定する処理 |
+| レビュー(Review) | 設計、差分、証拠、残存リスクを別の視点で吟味する行為 |
+| 状態(State) | 現在の進行段階、完了項目、未完了項目、承認、予算使用量など、再開に必要な情報 |
+| コンテキスト(Context) | そのModel Callでモデルへ実際に提示する情報 |
+| 記憶(Memory) | 将来のタスクで再利用するため、検証・期限・スコープを伴って保存した情報 |
+| セッション(Session) | 会話、イベント、状態、成果物を継続的に関連付ける実行単位 |
+| 引継ぎ(Handoff) | 別の人・Agent・Sessionへ、目的、状態、制約、証拠、次の操作を構造化して渡すこと |
+| 人間ゲート(Human Gate) | 人間の判断または承認がなければ次へ進めない境界 |
+| 停止条件(Stop Condition) | 完了、予算超過、同一失敗、権限不足、不確定結果など、実行を止める条件 |
+| 完了報告(Completion Report) | 実施内容、完了条件、証拠、未実施事項、残存リスク、Rollbackをまとめた最終成果物 |
+
+---
+
+## 通し事例
+
+本書では、必要に応じて次の事例をProject Harnessの観点から扱います。
+
+> **期限切れRefresh Tokenを受け取ったAPIが、本来401を返すべきところ500を返す不具合を修正する。**
+
+```text
+Task Contract
+→ read-only調査
+→ Plan Review
+→ Task Branch / Worktree
+→ workspace-write実装
+→ Targeted verify Script
+→ Trusted CI
+→ Fresh read-only Reviewer
+→ Completion Report
+→ Human Acceptance
+```
+
+AIエージェント開発ハンドブックでは、同じ事例をAgent Loop、Tool Contract、State、Stop Condition、Evidenceの観点から扱います。
 
 ---
 
@@ -105,33 +217,6 @@ AIコーディングエージェントを使う場合、少なくとも3層を�
 
 本書では、この自分たちで所有できる層を中心に扱います。
 
----
-
-## 表記方針
-
-意味を保ったまま日本語化できる用語は、初出時に**日本語(English)**で示します。
-
-例：
-
-- 利用ハーネス(Usage Harness)
-- プロジェクトハーネス(Project Harness)
-- 完了条件(Completion Criteria)
-- 実行予算(Execution Budget)
-- 権限プロファイル(Permission Profile)
-- 変更隔離(Change Isolation)
-- 完了証拠(Completion Evidence)
-- 採用ゲート(Acceptance Gate)
-- 可観測性(Observability)
-
-次のものは無理に日本語化しません。
-
-- Codex、MCP、OTel、JSONL、SLOなどの固有名詞・略語
-- `AGENTS.md`、`config.toml`、`hooks.json`などのファイル名
-- Worktree、Hook、Skill、Compactionなど、英語表記の方が誤解が少ない用語
-- API名、コマンド、設定キー、コード識別子
-
----
-
 ## 数値を含む例の読み方
 
 本書のテンプレートや設定例に含まれる具体的な数値は、すべて**説明用の例**です。
@@ -168,10 +253,8 @@ AIコーディングエージェントを使う場合、少なくとも3層を�
 18. [付録A 判断基準早見表](#appendix-a)
 19. [付録B 推奨リポジトリ構成例](#appendix-b)
 20. [付録C 実装テンプレート集](#appendix-c)
-21. [付録D 運用チェックリスト](#appendix-d)
-22. [付録E 用語集](#appendix-e)
+22. [付録E 共通用語集](#appendix-e)
 23. [付録F 参考文献](#appendix-f)
-
 ---
 
 <a id="core-principles"></a>
@@ -379,6 +462,9 @@ CIやScheduled Taskでは次を優先します。
 
 # 第1章 利用ハーネスの全体設計
 
+> **分類:** 共通原則を中心に、Codexでの対応例を併記します。
+
+
 ## 1.1 ハーネスを7つの面に分ける
 
 プロジェクトハーネスを次の7面に分けると、責任が明確になります。
@@ -457,22 +543,32 @@ Completion Report
 - CI実行と対話実行で結果が異なる
 - 失敗原因をTraceできない
 
-## 1.5 設計チェックリスト
+## 1.5 制御の強制力を段階化する
 
-- [ ] Vendor HarnessとProject Harnessの責任を分けた
-- [ ] 常設指示とTask固有指示を分けた
-- [ ] 権限プロファイルをTask種別ごとに分けた
-- [ ] 変更隔離方法を決めた
-- [ ] 必須検証をScript化した
-- [ ] 完了証拠の形式を決めた
-- [ ] 自動化時のFail Closed条件を決めた
-- [ ] Harness変更をVersion管理している
+| 段階 | 役割 | 例 |
+|---|---|---|
+| 行動を促す | Agentへ期待する作法を伝える | Prompt、`AGENTS.md`、Skill、Reference document |
+| 通常運用で自動確認する | 忘れ・逸脱を自動検知し、修正または停止する | Hook、Rule、Script、Policy middleware、Approval UI |
+| Agentから独立して強制する | Agentが変更・無視できない境界で拒否する | OS、Container、Network、Credential、CI、Protected Branch、Repository Rule |
 
----
+HookやRuleは有効な運用統制ですが、Agentと同じ権限で変更できる場合は最終境界ではありません。
 
-<a id="chapter-2"></a>
+例：
+
+```text
+「mainへ直接pushしない」
+
+AGENTS.mdで指示
++ Rule / Hookで検知
++ Branch Protectionで強制
+```
+
+越えてはならない境界ほど、下段へ配置します。
 
 # 第2章 リポジトリと実行環境の準備
+
+> **分類:** 共通原則。Bootstrap、Baseline、Project Trustの実装方法は製品・Environmentへ合わせます。
+
 
 ## 2.1 Agentへ依頼する前に環境を成立させる
 
@@ -584,24 +680,10 @@ CodexのManaged Worktreeでは、必要な無視ファイルを`.worktreeinclude
 
 ただしSecretを無条件に複製する設計は避けます。
 
-## 2.7 環境準備チェックリスト
-
-- [ ] Repository rootが正しい
-- [ ] `git status`を保存した
-- [ ] Runtime versionを確認した
-- [ ] 依存関係を再現可能に導入できる
-- [ ] BaselineのBuildまたはTest結果を保存した
-- [ ] 必要なLocal Serviceを確認した
-- [ ] Agentへ不要なSecretを渡していない
-- [ ] Worktreeに必要な無視ファイルを整理した
-- [ ] ProjectのAgent設定をReviewした
-- [ ] `doctor`または同等手順を用意した
-
----
-
-<a id="chapter-3"></a>
-
 # 第3章 タスク契約と依頼の設計
+
+> **分類:** 共通原則。Task Contractは製品非依存です。
+
 
 ## 3.1 良い依頼は「何をするか」より「何を成立させるか」を示す
 
@@ -728,23 +810,10 @@ Review Task：
 変更せずに、重大度順の指摘と根拠だけを返してください。
 ```
 
-## 3.8 Task設計チェックリスト
-
-- [ ] 目的が一文で説明できる
-- [ ] 期待する状態を定義した
-- [ ] 変更可能範囲を定義した
-- [ ] Non-goalを定義した
-- [ ] 完了条件が機械確認可能
-- [ ] 必要なEvidenceを指定した
-- [ ] 人間が決める事項を明示した
-- [ ] Stop Conditionを定義した
-- [ ] 最初にPlanするか実装するか指定した
-
----
-
-<a id="chapter-4"></a>
-
 # 第4章 AGENTS.mdと永続指示
+
+> **分類:** 製品に応じて実装。`AGENTS.md`はCodexなどでの具体例です。
+
 
 ## 4.1 AGENTS.mdの役割
 
@@ -869,23 +938,10 @@ Review時に確認します。
 - 参照先Documentが存在するか
 - Agentが実際に守れる記述か
 
-## 4.9 AGENTS.mdチェックリスト
-
-- [ ] Repository全体の規則だけを書いた
-- [ ] Build・Test・Lint Commandを記載した
-- [ ] 完了条件とEvidenceを記載した
-- [ ] 禁止範囲を具体的に書いた
-- [ ] Task固有情報を入れていない
-- [ ] Secretを入れていない
-- [ ] 詳細文書へ適切に分離した
-- [ ] Directory階層の重複を避けた
-- [ ] 現在のCommandで動作確認した
-
----
-
-<a id="chapter-5"></a>
-
 # 第5章 計画・実装・停止制御
+
+> **分類:** 共通原則。Plan modeや停止APIの名称は製品へ読み替えます。
+
 
 ## 5.1 Planが必要なTask
 
@@ -1033,21 +1089,10 @@ Agentが「追加改善」を見つけても、自動でScopeを拡大しませ�
 人間が次Taskとして採用
 ```
 
-## 5.9 計画・停止チェックリスト
-
-- [ ] Planが必要なTaskか判断した
-- [ ] Plan段階をread-onlyにした
-- [ ] Stepごとの検証を書いた
-- [ ] Human Gateを記載した
-- [ ] Stop Conditionを記載した
-- [ ] 実行予算を決めた
-- [ ] 進展なしの判定を決めた
-- [ ] 追加改善を別Taskへ分ける方針を決めた
-
----
-<a id="chapter-6"></a>
-
 # 第6章 権限・サンドボックス・ネットワーク
+
+> **分類:** 共通原則。Sandbox・Approval・Ruleの設定は製品固有です。
+
 
 ## 6.1 権限は2つの軸で考える
 
@@ -1241,24 +1286,10 @@ Package情報だけ調査して実行しない
 
 Full Accessは「Agentを信用する」設定ではなく、**別の層へ境界を移す設定**です。
 
-## 6.11 権限チェックリスト
-
-- [ ] Taskごとの最小権限を選んだ
-- [ ] 調査とReviewをread-onlyにした
-- [ ] Workspace rootを確認した
-- [ ] Networkを初期無効にした
-- [ ] Network有効化時にDomainを限定した
-- [ ] SecretをContextへ入れていない
-- [ ] 危険CommandへRuleを設定した
-- [ ] 承認Promptが意味のある粒度になっている
-- [ ] Full Access時の外部境界を明示した
-- [ ] Project設定をTrust前にReviewした
-
----
-
-<a id="chapter-7"></a>
-
 # 第7章 Skill・Hook・Rule・MCP・Script
+
+> **分類:** 製品に応じて実装。責任分離は共通、機能名とEventは製品固有です。
+
 
 ## 7.1 役割を混同しない
 
@@ -1437,23 +1468,10 @@ Agent向けScriptは、次のような共通形式を持つと扱いやすくな
 
 Human向け表示とMachine-readable Outputを両方用意します。
 
-## 7.11 能力面チェックリスト
-
-- [ ] 常設規則をAGENTS.mdへ限定した
-- [ ] 再利用WorkflowをSkillへ分離した
-- [ ] 決定論的処理をScript化した
-- [ ] 強制すべき処理をHook化した
-- [ ] Command PolicyをRuleへ分離した
-- [ ] MCPのTool・Scope・CredentialをReviewした
-- [ ] TaskごとのTool Surfaceを最小化した
-- [ ] Hook間の実行順へ依存していない
-- [ ] Machine-readable Outputを用意した
-
----
-
-<a id="chapter-8"></a>
-
 # 第8章 Git・ブランチ・Worktreeによる変更隔離
+
+> **分類:** 共通原則。Agent製品よりGitと実行Environment側で成立させる設計です。
+
 
 ## 8.1 Version Controlを安全装置として使う
 
@@ -1613,22 +1631,10 @@ Human: push前Review
 
 Data Migrationや外部Actionがある場合、Git Revertだけでは戻りません。
 
-## 8.10 Git隔離チェックリスト
-
-- [ ] Task開始時のGit状態を保存した
-- [ ] 専用BranchまたはWorktreeを使った
-- [ ] 人間の未完了変更と分離した
-- [ ] WorktreeのSetupを再現可能にした
-- [ ] 複数Writerを同じTreeへ入れていない
-- [ ] PatchとEvidenceを関連付けた
-- [ ] Commit・Push・Merge権限を分けた
-- [ ] Rollback方法を確認した
-
----
-
-<a id="chapter-9"></a>
-
 # 第9章 Context・Session・Compaction
+
+> **分類:** 共通原則。Session、Compaction、Cacheの仕様は製品固有です。
+
 
 ## 9.1 Main Sessionへ残すもの
 
@@ -1754,6 +1760,38 @@ Sessionの正本を会話だけにしません。
 
 > **例:** Directory名と保存内容は説明用です。機密情報、保存期間、RepositoryへのCommit可否をTeam Policyで決めてください。
 
+### Session Artifactの管理ポリシー
+
+`.agent-runs/`などのDirectoryを作る場合、保存内容だけでなくLifecycleを定義します。
+
+| 項目 | 判断する内容 |
+|---|---|
+| Git管理 | 原則`.gitignore`へ含めるか、Template / SchemaだけCommitするか |
+| Commit対象 | Task Contract、承認済みPlan、最終Completion Reportなど、再利用価値のある最小成果だけか |
+| 保存期間 | Local、CI、監査StorageごとのRetentionと削除責任 |
+| 容量 | Run数、Log size、Screenshot、Binary、圧縮、上限到達時の挙動 |
+| Secret | Command、Environment、URL、Header、Prompt、DiffのMasking |
+| 個人情報 | Data classification、Access、地域、削除要求、目的外利用 |
+| CI Artifact | Local作業Logとの役割分担、Retention、閲覧権限 |
+| Access | User、Team、Security、Auditorの読取り範囲 |
+| 改ざん耐性 | Writer Agentが変更できないStorage、Object lock、Hash、署名の要否 |
+| Source of Truth | Git、CI、Issue Tracker、Runtime Eventのどれが何の正本か |
+
+推奨例：
+
+```text
+Repository
+├─ .agent-runs/           # 原則gitignore、短期作業Artifact
+├─ docs/agent/reports/    # 承認して残す最終Reportのみ
+└─ .github/workflows/     # Trusted CIの実行定義
+
+CI Artifact Store         # Fixed Commit上の独立証拠
+Audit Store               # 高リスクActionのParameter-bound証拠
+```
+
+Agentが書込み可能な`.agent-runs/`だけを、高リスク変更の唯一の監査証拠にしません。
+
+
 ## 9.8 Handoff
 
 Sessionを別Agent・別人・別Environmentへ渡す場合、Transcript全文ではなくHandoff Contractを使います。
@@ -1770,22 +1808,10 @@ Sessionを別Agent・別人・別Environmentへ渡す場合、Transcript全文�
 - Forbidden actions
 - Evidence paths
 
-## 9.9 Contextチェックリスト
-
-- [ ] Main Sessionへ重要情報だけを残した
-- [ ] 大量LogをArtifactへ退避した
-- [ ] PlanとStateをFileへ保存した
-- [ ] Compaction後に復元できる
-- [ ] Session分割基準を決めた
-- [ ] Tool・Model・Permissionの途中変更を減らした
-- [ ] Handoff形式を定義した
-- [ ] Artifactの機密性と保存期間を決めた
-
----
-
-<a id="chapter-10"></a>
-
 # 第10章 検証・証拠・採用判定
+
+> **分類:** 共通原則。採用判定はVendor Harnessの外側で所有します。
+
 
 ## 10.1 検証の順序
 
@@ -1809,33 +1835,39 @@ Human Acceptance
 
 Riskに応じて必須段階を決めます。
 
-## 10.2 証拠の段階(Evidence Ladder)
+## 10.2 証拠設計と独立性
 
-弱い：
+証拠を1本の強弱だけで並べず、次の軸で評価します。
 
-```text
-Agentが成功と言った
-```
+| 軸 | 確認する問い |
+|---|---|
+| 関連性 | Completion Criteriaそのものを検証しているか |
+| 独立性 | Writer Agentとは別Process・別Context・別権限で確認したか |
+| 改ざん耐性 | Writerが自由に書き換えられるWorkspace外にも保存されているか |
+| 対象固定 | Commit SHA、Diff、Artifact hash、Config versionへ結び付いているか |
+| 鮮度 | 現在のBranch / Model / Harnessに対する結果か |
+| 再現性 | Command、Environment、入力を再現できるか |
+| 完全性 | 正常系、失敗系、未実行項目を区別しているか |
 
-中程度：
+### 証拠の種類
 
-```text
-Commandを実行したと報告した
-```
+| 種類 | 用途 | 限界 |
+|---|---|---|
+| Agent実行証拠 | 作業中の高速な自己検証 | AgentがTest選択・Log保存先を支配できる |
+| Project Script証拠 | Teamで同じVerification入口を使う | 同じWorkspace内なら改変可能性が残る |
+| Trusted CI証拠 | 採用判定用の独立実行 | CI設定自体の変更Reviewが必要 |
+| 独立Reviewer証拠 | 前提・Diff・実行経路を別Contextで再確認 | Reviewerも非決定的であり、唯一のGateにしない |
+| 人間確認 | UI、仕様、Risk Acceptance、高影響変更 | 時間と専門性が必要 |
 
-強い：
+### リスク別の目安
 
-```text
-Command、Exit Code、結果Artifactがある
-```
+| Risk | 証拠例 |
+|---|---|
+| 低 | Agent実行証拠 + Completion Report |
+| 中 | verify Script + Diff + 必要に応じTrusted CI |
+| 高 | Fixed Commit上のTrusted CI + 独立Review + Human Acceptance + 保護された監査Artifact |
 
-さらに強い：
-
-```text
-変更前に失敗
-変更後に成功
-独立環境でも成功
-```
+Agentの説明は、証拠への索引です。説明文そのものを証拠へ置き換えません。
 
 ## 10.3 verify Script
 
@@ -1993,24 +2025,10 @@ Agentは次を報告します。
 
 未実行を成功扱いしません。
 
-## 10.12 検証チェックリスト
-
-- [ ] 完了条件ごとにEvidenceを対応させた
-- [ ] Targeted Testを実行した
-- [ ] 必要な広域Testを実行した
-- [ ] Lint・Type・Formatを確認した
-- [ ] DiffをReviewした
-- [ ] Scope外変更を確認した
-- [ ] UI/API/DB固有のEvidenceを確認した
-- [ ] Fresh-context Reviewを検討した
-- [ ] 未実行項目を明示した
-- [ ] Completion Reportを作成した
-
----
-
-<a id="chapter-11"></a>
-
 # 第11章 サブエージェントと並列実行
+
+> **分類:** 共通原則。Subagentの起動方法は製品固有です。
+
 
 ## 11.1 Subagentを使う理由
 
@@ -2091,17 +2109,29 @@ SubagentはToken、Latency、Coordination Costを増やします。
 - AgentごとのModel
 - 結果の最大Size
 
-## 11.7 Reviewerの独立性
+## 11.7 独立レビューの成立条件
 
-Reviewerを独立させる方法：
+WriterとReviewerを別名にするだけでは、独立Reviewになりません。独立性を高める条件は次です。
 
-- Fresh Context
-- read-only
-- Task ContractとDiffだけを渡す
-- Writerの結論を先に渡さない
-- Severity Rubricを固定
-- FindingにFile・Line・Reasonを要求
-- False Positiveを記録
+- Task Contract、実際のDiff、Source Codeを正本とする
+- Writerの説明だけを根拠にしない
+- ReviewerはFresh Contextを使用する
+- Reviewerは原則read-onlyとし、Findingと修正を分離する
+- Starting CommitとReview対象Commitを固定する
+- Clean Checkoutまたは独立Worktreeで確認する
+- 変更された実行経路をSourceから再構築する
+- 重要なVerificationを独立して再実行する
+- FindingへFile、Line、Reason、Evidence、Confidenceを要求する
+- False PositiveとMissをEval Datasetへ戻す
+- 高リスク変更では別Model、Security担当、人間Reviewを追加検討する
+
+独立性が弱くなる例：
+
+- Writerの長い自己弁護を先に渡す
+- 同じSessionで「自分の変更をReviewして」と依頼する
+- Reviewerがその場で修正し、FindingとFixの境界を失う
+- Dirty WorkspaceをReviewし、対象Diffを固定しない
+- Writerが生成したTestだけを実行し、前提を疑わない
 
 ## 11.8 Agent間Coordinationの失敗
 
@@ -2125,24 +2155,10 @@ Reviewerを独立させる方法：
 - SubagentStop Hook
 - Result validation
 
-## 11.9 Subagentチェックリスト
-
-- [ ] Subagentを使う理由が明確
-- [ ] 単一Agentで十分でないことを確認した
-- [ ] Read-heavy作業から始めた
-- [ ] Roleごとの権限を限定した
-- [ ] Handoff Contractを使用した
-- [ ] Output schemaを定義した
-- [ ] Parallel WriterをWorktree分離した
-- [ ] Spawn Budgetを設定した
-- [ ] ReviewerをFresh Contextにした
-- [ ] 統合後に再Verificationした
-
----
-
-<a id="chapter-12"></a>
-
 # 第12章 非対話実行・CI・自動化
+
+> **分類:** Codexでの実装例を多く含みます。共通責任は、非対話実行、構造化出力、Fail Closed、独立Artifactです。
+
 
 ## 12.1 対話実行との違い
 
@@ -2304,25 +2320,10 @@ Deterministic CIは次を担当します。
 
 同じ結果が完全に再現されなくても、差異を分析できる状態にします。
 
-## 12.11 CIチェックリスト
-
-- [ ] 非対話で質問不要なTaskにした
-- [ ] read-onlyから始めた
-- [ ] 必要な場合だけworkspace-writeにした
-- [ ] Output Schemaを定義した
-- [ ] JSONL Eventを保存した
-- [ ] 必須IntegrationのFailureをFail Closedにした
-- [ ] CredentialをProcess単位で渡した
-- [ ] Untrusted CodeとSecretを分離した
-- [ ] Isolated Runnerを使用した
-- [ ] Deterministic CIを併用した
-- [ ] Starting CommitとConfigを記録した
-
----
-
-<a id="chapter-13"></a>
-
 # 第13章 可観測性・評価・コスト管理
+
+> **分類:** 共通原則。Telemetry exporterとEvent schemaは製品へ読み替えます。
+
 
 ## 13.1 最終Diffだけでは原因を追えない
 
@@ -2516,23 +2517,10 @@ Top failure reasons
 Harness version
 ```
 
-## 13.11 評価チェックリスト
-
-- [ ] ModelだけでなくHarness全体をVersion化した
-- [ ] Task分類ごとに評価した
-- [ ] Starting commitを固定した
-- [ ] Acceptance criteriaを固定した
-- [ ] Human review timeを記録した
-- [ ] Cost per accepted changeを計測した
-- [ ] Policy violationを計測した
-- [ ] Production failureをEvalへ追加した
-- [ ] Prompt・CodeのTelemetry範囲を制御した
-
----
-
-<a id="chapter-14"></a>
-
 # 第14章 障害対応と継続改善
+
+> **分類:** 共通原則。IncidentをHarness変更とEvalへ戻す運用を扱います。
+
 
 ## 14.1 失敗分類
 
@@ -2673,23 +2661,10 @@ Repository Document、Issue、Web Page、MCP Resultに次のような文が含�
 
 Harnessは増やすだけでなく、削除して保守します。
 
-## 14.11 Incidentチェックリスト
-
-- [ ] Agentを停止した
-- [ ] 外部副作用を確認した
-- [ ] Evidenceを保全した
-- [ ] Credential影響を確認した
-- [ ] Rollbackまたは補償を行った
-- [ ] 直接原因と根本原因を分けた
-- [ ] 改善先を正しく選んだ
-- [ ] Eval Caseへ追加した
-- [ ] 不要な制御を増やしていないかReviewした
-
----
-
-<a id="chapter-15"></a>
-
 # 第15章 導入段階と成熟度モデル
+
+> **分類:** 共通原則。現在の失敗に必要な制御だけを段階的に追加します。
+
 
 ## 15.1 段階0　Promptのみ
 
@@ -2822,6 +2797,9 @@ MCPやMulti-agentから始めず、先に完了条件とVerificationを作りま
 
 # 第16章 Codexを組み込む高度なハーネス
 
+> **分類:** Codexでの実装例。App Server、`codex exec`、SDKなどのCurrent Surfaceを扱います。
+
+
 ## 16.1 利用方法を選ぶ
 
 Codexを自分たちのToolやWorkflowへ組み込む方法には、現在、主に次があります。
@@ -2852,11 +2830,9 @@ App Serverは、Codex HarnessをClientへ公開するLong-lived ProcessとJSON-R
 
 Custom IDE、Internal Developer Portal、Remote Agent UIなどへ向きます。
 
-## 16.3 Eventを正本にする
+## 16.3 EventをUI・再接続の基礎記録として扱う
 
-Agent UIは単純なRequest / Responseでは足りません。
-
-1つのTaskは、複数Eventになります。
+Agent UIは単純なRequest / Responseだけでは足りません。1つのTaskは複数Eventへ展開されます。
 
 ```text
 thread started
@@ -2869,7 +2845,17 @@ item completed
 turn completed
 ```
 
-Client側は、最終MessageだけでなくEvent Lifecycleを保存・表示します。
+Client側は、最終MessageだけでなくEvent Lifecycleを保存・表示します。ただし、Event Streamを業務データ、Gitの内容、承認対象、現在のRuntime Stateの唯一の正本にするとは限りません。
+
+| 対象 | 代表的な正本 |
+|---|---|
+| Repository内容 | 固定Commit、Git object、検証対象のWorktree |
+| Agentの現在状態 | App Server / RuntimeのThread State |
+| UI再構築・追跡 | 保存したEvent Stream |
+| 採用判定 | Trusted CI、Review結果、Human Acceptance |
+| 業務データ | 対象SystemのDatabaseまたはAPI |
+
+Event Streamから状態を再構築する場合は、順序、重複、Schema Version、欠落Event、Retentionを扱えることを確認します。
 
 ## 16.4 ClientとAgent Stateを分離する
 
@@ -2901,25 +2887,11 @@ Codexは更新が速いため、Current docsとChangelogをRelease processへ含
 
 ## 16.6 MCP ServerとしてのCodex
 
-2026年8月24日のCodex Changelogでは、`codex mcp-server`はDeprecatedとなり、App Serverの利用が案内されています。
+`codex mcp-server`は、既存のMCP WorkflowからCodexをCallable Toolとして呼び出したい場合の選択肢です。
 
-新規Integrationでは、目的がFull Codex Harnessの組込みならApp Serverを優先します。
+一方、OpenAIはApp Serverを、Full Codex HarnessをClientへ公開するFirst-class Integrationとして説明しています。Thread、Approval、Streaming Event、DiffなどCodex固有のSession semanticsが必要な新規Integrationでは、App Serverを優先して比較します。
 
-MCPは、Codexを単純なCallable Toolとして既存MCP Workflowへ入れる場合に共通部分だけを扱う形になり、DiffやRich Session semanticsを表現しにくいことがあります。
-
-## 16.7 Advanced Harnessチェックリスト
-
-- [ ] Interactive・Exec・SDK・App Serverの用途を分けた
-- [ ] 最終MessageだけでなくEventを保存した
-- [ ] Runtime側をStateの正本にした
-- [ ] Approval RequestをBidirectionalに扱える
-- [ ] Binary / Protocol versionをPinした
-- [ ] Upgrade testを用意した
-- [ ] Deprecated integrationを新規採用していない
-- [ ] Config・Skill・MCP・Hookの互換性を確認した
-
----
-<a id="appendix-a"></a>
+MCPは共通Tool Interfaceへ適合しやすい反面、Rich Session semanticsを共通部分へ縮約する可能性があります。したがって「非推奨だから使わない」ではなく、必要なCapabilityに応じてApp Server、MCP Server、`codex exec`、SDKを選択します。
 
 # 付録A 判断基準早見表
 
@@ -3846,255 +3818,42 @@ metrics:
 
 ---
 
-<a id="appendix-d"></a>
-
-# 付録D 運用チェックリスト
-
-## D.1 初回導入
-
-- [ ] Repository rootに`AGENTS.md`を作成した
-- [ ] Build・Test・Lint Commandを確認した
-- [ ] Task Contract Templateを作成した
-- [ ] `verify` Scriptを用意した
-- [ ] read-onlyとworkspace-writeを使い分けられる
-- [ ] Git BranchまたはWorktreeを使う
-- [ ] Completion Report Templateを用意した
-- [ ] Secret pathとNetwork Policyを確認した
-
-## D.2 Task開始前
-
-- [ ] Task Contractがある
-- [ ] Starting commitを記録した
-- [ ] `git status`を保存した
-- [ ] Baselineを確認した
-- [ ] Planの要否を判断した
-- [ ] Sandboxを選んだ
-- [ ] Networkを選んだ
-- [ ] Tool・MCPを最小化した
-- [ ] Stop Conditionを定義した
-- [ ] Evidenceを定義した
-
-## D.3 Plan Review
-
-- [ ] 現状理解がSourceと一致する
-- [ ] Scope外変更がない
-- [ ] Public Contract変更を認識している
-- [ ] StepごとのVerificationがある
-- [ ] Human Gateがある
-- [ ] Rollbackがある
-- [ ] 未確定事項が明示されている
-
-## D.4 承認Prompt
-
-- [ ] 操作対象が分かる
-- [ ] 実行理由が分かる
-- [ ] 副作用が分かる
-- [ ] Network先が分かる
-- [ ] 変更Fileが分かる
-- [ ] 代替案が分かる
-- [ ] Session限定か永続Ruleか分かる
-- [ ] 内容を理解せず連続承認していない
-
-## D.5 Network有効化前
-
-- [ ] 本当にCommand Networkが必要
-- [ ] Search ToolやMCPで代替できない
-- [ ] Domainを限定した
-- [ ] Local/private destinationを制御した
-- [ ] Secretを持つProcessと分離した
-- [ ] DownloadされるCodeをTrustしていない
-- [ ] Package lifecycle Scriptを考慮した
-- [ ] 外部ContentをUntrusted扱いする
-
-## D.6 MCP追加前
-
-- [ ] Repository内情報では代替できない
-- [ ] Tool一覧をReviewした
-- [ ] Read / Write / Destructiveを分類した
-- [ ] OAuth ScopeまたはToken Scopeを確認した
-- [ ] Server Instructionsを確認した
-- [ ] Required / Optionalを決めた
-- [ ] Timeout / Failure方針を決めた
-- [ ] Audit Logを確認した
-- [ ] Project scopeとUser scopeを選んだ
-
-## D.7 Hook追加前
-
-- [ ] PromptではなくHookが必要な理由がある
-- [ ] Idempotent
-- [ ] Hook間順序へ依存しない
-- [ ] Timeoutがある
-- [ ] Failure Policyがある
-- [ ] Logがある
-- [ ] Secretを出力しない
-- [ ] Local・CI・WorktreeでTestした
-- [ ] Hook自体をReviewした
-
-## D.8 Subagent起動前
-
-- [ ] 明確な分離理由がある
-- [ ] Taskが独立している
-- [ ] Role・Scope・Outputを定義した
-- [ ] 権限を限定した
-- [ ] WriterはWorktree分離した
-- [ ] Spawn Budgetがある
-- [ ] Parentが統合責任を持つ
-- [ ] ResultをSchemaまたは定型形式で返す
-
-## D.9 完了受入前
-
-- [ ] 完了条件ごとのEvidenceがある
-- [ ] Targeted Verificationが通った
-- [ ] 必要なIntegration / E2Eが通った
-- [ ] DiffをReviewした
-- [ ] Scope外変更がない
-- [ ] Forbidden file変更がない
-- [ ] 未実行項目が明示されている
-- [ ] 残存Riskが明示されている
-- [ ] Rollback方法がある
-- [ ] Completion Reportがある
-
-## D.10 Full Access前
-
-- [ ] 外側のContainer / VMが本当の境界
-- [ ] Workspaceは破棄可能
-- [ ] RepositoryはTrust済み
-- [ ] Credentialを最小化
-- [ ] Network Egressを制限
-- [ ] Host mountを最小化
-- [ ] Activityを監視
-- [ ] 実行後にEnvironmentを破棄
-- [ ] Full Accessが必要な理由を記録
-
-## D.11 CI導入前
-
-- [ ] Inputが明確
-- [ ] 非対話で質問不要
-- [ ] read-onlyから開始
-- [ ] Output Schemaがある
-- [ ] JSONLを保存
-- [ ] Required Tool failureで停止
-- [ ] SecretをUntrusted Codeと分離
-- [ ] Timeoutがある
-- [ ] Artifactを保存
-- [ ] CLI / Model / Config versionを記録
-- [ ] Deterministic CIを併用
-
-## D.12 Harness定期Review
-
-- [ ] 古いAGENTS.md規則を削除した
-- [ ] 使用されないSkillを削除した
-- [ ] Hookの発火・失敗率を確認した
-- [ ] RuleのInline Testを更新した
-- [ ] MCP ScopeをReviewした
-- [ ] Permission ProfileをReviewした
-- [ ] Eval Caseを更新した
-- [ ] Cost per accepted changeを確認した
-- [ ] Agent更新後の回帰を確認した
-- [ ] 不要になった制御を削除した
-
-## D.13 危険信号
-
-次が見えたら、Taskを停止または権限を下げます。
-
-- AgentがSecretを要求
-- Scope外Fileを変更
-- Baseline Failureを隠す
-- Testを実行せず成功扱い
-- 同一Commandを繰り返す
-- Network先を説明できない
-- 大量のDependency追加
-- `--yolo`相当を提案
-- mainへの直接push
-- Writer自身の説明だけでReviewを通す
-- Hook / Ruleを無効化して進める
-- Untrusted RepositoryでProject HooksをTrustするよう急かす
-
----
-
-<a id="appendix-e"></a>
-
-# 付録E 用語集
-
-## Agent Harness
-
-ModelをTool実行、Context管理、State、権限、検証などへ接続し、実際に仕事を進められるようにする実行基盤。
-
-## Vendor Harness
-
-CodexなどのProduct側が提供するAgent Loop、Tool Execution、Session、Approval、Compactionなど。
-
-## Project Harness
-
-RepositoryまたはTeamが所有する、`AGENTS.md`、Task Contract、Skill、Hook、Rule、MCP、Verification、Evidenceなどの層。
-
-## Usage Harness
-
-既成のAI Agentを利用するとき、その使い方を安全・再現可能・検証可能にする構成。本書ではProject Harnessとほぼ同じ文脈で使用。
-
-## Task Contract
-
-目的、Scope、Non-goal、完了条件、Evidence、Stop Conditionを固定するTask単位の契約。
-
-## Execution Budget
-
-時間、Turn、Tool failure、Cost、Agent数など、1 Taskで消費できる上限。
-
-## Completion Evidence
-
-Test結果、Diff、Log、Screenshotなど、完了条件が成立したことを示す証拠。
-
-## Acceptance Gate
-
-変更を採用する前に通す機械検証と人間判断の境界。
-
-## Sandbox
-
-Agentが実行するProcessやFile AccessをOS・Containerなどで制限する技術的境界。
-
-## Approval Policy
-
-Agentが境界を越える操作を行うとき、いつ誰へ確認するかを決めるPolicy。
-
-## Rule
-
-Command Prefixなどに対してAllow、Prompt、Forbiddenを定義するPolicy。
-
-## Hook
-
-SessionやTool CallなどのLifecycle Eventで自動実行するScriptまたはTool。
-
-## Skill
-
-特定Taskで再利用する指示、Reference、Optional ScriptをまとめたWorkflow Package。
-
-## MCP
-
-Agentと外部Tool・Data Sourceを接続するProtocol。
-
-## Worktree
-
-同じGit Repositoryの別Checkout。複数TaskやAgentのFilesystem・Branch状態を隔離する。
-
-## Context Pollution
-
-不要なLog、過去Task、長い中間出力などにより、重要な指示や状態がContext内で埋もれること。
-
-## Context Rot
-
-長いSessionでContextの関連性が低下し、Agentの判断品質が悪化する現象を指す表現。
-
-## Compaction
-
-長いConversationを短い代表状態へ圧縮して継続する仕組み。
-
-## Handoff Contract
-
-別Agent・別Session・別人へ作業を渡すための、Goal、State、Decision、Evidence、Next Actionの定型情報。
-
-## Cost per Accepted Change
-
-採用された変更1件を得るまでに必要だったModel、Subagent、CI、人間Review、Reworkの総Cost。
+# 付録E 共通用語集
+
+共通用語の正本は、AIエージェント開発ハンドブックの付録Dです。本書では、単体利用のため同じ定義を再掲します。
+
+| 用語 | 本シリーズでの意味 |
+|---|---|
+| ハーネス(Harness) | モデルの周囲で、コンテキスト、ツール、権限、状態、検証、評価、可観測性、コスト、回復を管理する実行・運用層 |
+| タスク契約(Task Contract) | 目的、期待状態、範囲、禁止事項、完了条件、必要証拠、停止条件を開始前に固定した契約 |
+| 完了条件(Completion Criteria) | タスクを終了してよいと判定する、観測可能な条件 |
+| 証拠(Evidence) | 完了条件を満たしたことを確認するための、コマンド結果、差分、ログ、テスト、観測記録など |
+| 実行予算(Execution Budget) | Step、時間、Tool Call、費用、再試行、並列数などの実行上限 |
+| 検証(Verification) | 特定の出力・変更・事後条件が期待どおりかを確認する処理 |
+| 評価(Evaluation) | 代表タスク集合を使い、システム品質を比較・測定する処理 |
+| レビュー(Review) | 設計、差分、証拠、残存リスクを別の視点で吟味する行為 |
+| 状態(State) | 現在の進行段階、完了項目、未完了項目、承認、予算使用量など、再開に必要な情報 |
+| コンテキスト(Context) | そのModel Callでモデルへ実際に提示する情報 |
+| 記憶(Memory) | 将来のタスクで再利用するため、検証・期限・スコープを伴って保存した情報 |
+| セッション(Session) | 会話、イベント、状態、成果物を継続的に関連付ける実行単位 |
+| 引継ぎ(Handoff) | 別の人・Agent・Sessionへ、目的、状態、制約、証拠、次の操作を構造化して渡すこと |
+| 人間ゲート(Human Gate) | 人間の判断または承認がなければ次へ進めない境界 |
+| 停止条件(Stop Condition) | 完了、予算超過、同一失敗、権限不足、不確定結果など、実行を止める条件 |
+| 完了報告(Completion Report) | 実施内容、完了条件、証拠、未実施事項、残存リスク、Rollbackをまとめた最終成果物 |
+
+### Codex固有語との関係
+
+| 共通責任 | Codexでの代表例 |
+|---|---|
+| 永続指示 | `AGENTS.md` |
+| Permission / Sandbox | `sandbox_mode`、`approval_policy`、Rule |
+| Lifecycle control | Hook |
+| 再利用手順 | Skill |
+| 外部Capability | MCP |
+| 非対話実行 | `codex exec` |
+| Rich Event integration | App Server |
+
+これらは実装例であり、共通用語の定義そのものではありません。
 
 ---
 
@@ -4125,6 +3884,17 @@ Agentと外部Tool・Data Sourceを接続するProtocol。
 - [Running Codex safely at OpenAI](https://openai.com/index/running-codex-safely/)
 - [Codex changelog](https://developers.openai.com/codex/changelog)
 
+## 共通設計・Security・Observability
+
+- [NIST AI Risk Management Framework](https://www.nist.gov/itl/ai-risk-management-framework)
+- [NIST AI 600-1 Generative AI Profile](https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence)
+- [OWASP AI Agent Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/AI_Agent_Security_Cheat_Sheet.html)
+- [OWASP Secure Coding with AI Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Secure_Coding_with_AI_Cheat_Sheet.html)
+- [OWASP Top 10 for Agentic Applications for 2026](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/)
+- [OWASP GenAI LLM Top 10 2026](https://genai.owasp.org/resource/owasp-genai-llm-top-10-2026/)
+- [OpenTelemetry Semantic Conventions](https://opentelemetry.io/docs/specs/semconv/)
+- [OpenTelemetry GenAI Semantic Conventions](https://github.com/open-telemetry/semantic-conventions-genai)
+
 ## Agent Harness参考情報
 
 - [Agent Harness Home](https://agent-harness.ai/)
@@ -4133,10 +3903,10 @@ Agentと外部Tool・Data Sourceを接続するProtocol。
 
 ## 参考情報の使い方
 
-- OpenAI Codex固有の設定例は、2026年8月26日時点の公式文書を確認して作成しています。
-- Codexの設定、CLI Flag、Experimental機能は更新される可能性があります。適用前にCurrent docsとChangelogを確認してください。
-- Agent Harnessの記事に含まれる個別の性能値や閾値は、環境・Task・評価方法へ依存するため、本書の普遍的な推奨値としては採用していません。
-- 本書では、Context管理、Tool制御、Verification、Cost tracking、Observabilityを共通Harness層として扱う設計思想を参考にしています。
+- Codex固有の設定・CLI Flag・Experimental機能は更新されるため、適用前にCurrent docsとChangelogを確認します。
+- App ServerはFull Harness integration向けのFirst-class methodとして公式に説明されています。MCP、Exec、SDKは必要なSurfaceに応じて選びます。
+- NIST資料はRisk Managementの枠組み、OWASP資料はSecurity ThreatとControl、OpenTelemetryはTelemetry namingの外部基準として使います。
+- Agent Harness記事の個別性能値や閾値は、普遍的な推奨値として採用しません。
 
 ---
 

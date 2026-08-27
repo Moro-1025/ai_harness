@@ -1,8 +1,8 @@
 ---
 title: "AIエージェント開発ハンドブック"
-subtitle: "設計思想・判断基準・チェックリスト・実装テンプレート"
-version: "1.0"
-updated: "2026-08-26"
+subtitle: "設計思想・判断基準・実装テンプレート"
+version: "1.1"
+updated: "2026-08-27"
 language: "ja"
 ---
 
@@ -13,9 +13,121 @@ language: "ja"
 
 ---
 
+## シリーズ案内
+
+本シリーズは、次の2冊で構成します。
+
+- **本書: AIエージェント開発ハンドブック**  
+  自作するAIエージェントシステムの設計、実装、評価、運用を扱います。共通原則の正本は本書です。
+- **[AIコーディングエージェント活用ハーネス・ハンドブック](AI_Coding_Agent_Usage_Harness_Handbook_JA_v1.1.md)**  
+  Codexなどの既成コーディングエージェントを、Repositoryと開発工程の中で安全・再現可能・検証可能に利用する方法を扱います。
+
+AIエージェント自体を開発する場合は本書を中心に参照し、既成のコーディングエージェントを利用する場合は活用ハーネスを中心に参照してください。活用ハーネスは単体でも読めますが、共通原則の詳細は本書を正本とします。
+
+---
+
+## Version 1.1の主な変更
+
+- NIST、OWASP、OpenTelemetry、Provider公式資料を追加し、主要主張と根拠の対応表を設けた
+- 読者別の読書ルートと、リスク別の適用レベルを追加した
+- 行動誘導、運用統制、Agentから独立した強制境界を区別した
+- 証拠の強さを1本の段階ではなく、独立性・完全性・鮮度・改ざん耐性・再現性の複数軸で評価するよう変更した
+- イベントログ、現在状態、業務データ、モデル向け要約、長期記憶の正本を分離した
+- 並行実行、重複処理、外部処理の不確定結果、承認後の対象変更を扱う章を追加した
+- セキュリティ脅威モデルを、SSRF、供給網、Memory/RAG汚染、Cross-tenant漏えい、Approvalすり替えまで拡張した
+- 実行可能な最小参照実装とテストを追加した
+
+---
+
+## 読者別の読書ルート
+
+| 目的 | 最初に読む範囲 |
+|---|---|
+| 最小の単一Agentを作る | 中核原則 → 第1章 → 第2章 → 第3章 → 第5章 → 第7章 → 第12章 |
+| 本番運用へ進める | 上記 + 第6章 → 第8章 → 第9章 → 第10章 → 第13章 |
+| RAG・Memoryを設計する | 第4章 → 第6章 → 第7章 → 第8章 → 第10章 |
+| Multi-Agentを導入する | 第3章 → 第6章 → 第11章 → 第13章 |
+| Security Reviewを行う | 第1章 → 第5章 → 第10章 → 第13章 → 付録C |
+| 既存Agentを設計レビューする | 中核原則 → 付録A → 付録C → 付録F |
+| 実装例から理解する | 第3章 → 第5章 → 付録B → 付録E |
+
+---
+
+## リスク別の適用レベル
+
+すべてのAgentへ同じ統制を要求しません。次は説明用の分類であり、法的・業務上の正式なリスク区分ではありません。
+
+| レベル | 代表例 | 最低限の統制 |
+|---|---|---|
+| 低リスク | 読取り、要約、候補作成、下書き | Scope、基本Validation、実行ログ、停止条件 |
+| 中リスク | コード変更、可逆な設定変更、内部DBへの限定書込み | 隔離、差分、Test、Execution Budget、Idempotency、Rollback |
+| 高リスク | 本番変更、外部送信、権限変更、個人情報、金銭、不可逆操作 | Agentから独立した強制境界、独立検証、Human Gate、監査、補償・緊急停止 |
+
+リスクはModelの自信度では決めません。少なくとも次を見ます。
+
+- 影響範囲(Blast Radius)
+- 可逆性(Reversibility)
+- 外部副作用
+- 権限・Credential
+- データ機密性
+- 誤りの検知可能性
+- 復旧時間
+- 法的・契約上の責任
+
+---
+
+## 共通用語
+
+2冊で共通して使用する用語は、次の意味へ統一します。完全版は付録Dを参照してください。
+
+| 用語 | 本シリーズでの意味 |
+|---|---|
+| ハーネス(Harness) | モデルの周囲で、コンテキスト、ツール、権限、状態、検証、評価、可観測性、コスト、回復を管理する実行・運用層 |
+| タスク契約(Task Contract) | 目的、期待状態、範囲、禁止事項、完了条件、必要証拠、停止条件を開始前に固定した契約 |
+| 完了条件(Completion Criteria) | タスクを終了してよいと判定する、観測可能な条件 |
+| 証拠(Evidence) | 完了条件を満たしたことを確認するための、コマンド結果、差分、ログ、テスト、観測記録など |
+| 実行予算(Execution Budget) | Step、時間、Tool Call、費用、再試行、並列数などの実行上限 |
+| 検証(Verification) | 特定の出力・変更・事後条件が期待どおりかを確認する処理 |
+| 評価(Evaluation) | 代表タスク集合を使い、システム品質を比較・測定する処理 |
+| レビュー(Review) | 設計、差分、証拠、残存リスクを別の視点で吟味する行為 |
+| 状態(State) | 現在の進行段階、完了項目、未完了項目、承認、予算使用量など、再開に必要な情報 |
+| コンテキスト(Context) | そのModel Callでモデルへ実際に提示する情報 |
+| 記憶(Memory) | 将来のタスクで再利用するため、検証・期限・スコープを伴って保存した情報 |
+| セッション(Session) | 会話、イベント、状態、成果物を継続的に関連付ける実行単位 |
+| 引継ぎ(Handoff) | 別の人・Agent・Sessionへ、目的、状態、制約、証拠、次の操作を構造化して渡すこと |
+| 人間ゲート(Human Gate) | 人間の判断または承認がなければ次へ進めない境界 |
+| 停止条件(Stop Condition) | 完了、予算超過、同一失敗、権限不足、不確定結果など、実行を止める条件 |
+| 完了報告(Completion Report) | 実施内容、完了条件、証拠、未実施事項、残存リスク、Rollbackをまとめた最終成果物 |
+
+---
+
+## 通し事例
+
+本書では、必要に応じて次の事例へ設計原則を対応付けます。
+
+> **期限切れRefresh Tokenを受け取ったAPIが、本来401を返すべきところ500を返す不具合を修正する。**
+
+本書では、この事例をAIエージェントシステム内部の観点から扱います。
+
+```text
+Task Contract
+→ 調査Tool
+→ Agent Loop
+→ 修正候補
+→ File Write Tool
+→ Targeted Test
+→ Integration Test
+→ Completion Criteria照合
+→ Evidence付きCompletion Report
+```
+
+同じ事例を活用ハーネスでは、Repository、権限、Branch / Worktree、CI、独立Reviewの観点から扱います。
+
+---
+
 ## 本書の目的
 
-本書は、AIエージェント開発に関する複数の公開投稿で繰り返し扱われている設計思想と、実務で再利用できる判断基準・チェックリスト・実装テンプレートだけを抽出し、体系化したものです。
+本書は、AIエージェント開発に関する複数の公開投稿で繰り返し扱われている設計思想と、実務で再利用できる判断基準・実装テンプレートだけを抽出し、体系化したものです。
 
 対象は次のようなシステムです。
 
@@ -32,16 +144,26 @@ language: "ja"
 
 ## 参考情報の扱い
 
-本書では、公開投稿に加えて、Agent Harnessの公開記事で整理されている次の考え方も参照しています。
+Version 1.1では、参考情報を次の順で扱います。
 
-- エージェントフレームワーク(Agent Framework)とハーネス(Agent Harness)は役割が異なる
-- ハーネスには、検証、可観測性、コスト制御、評価、エラー回復などが含まれる
-- ツール呼出しの前後で入力・出力を検証する
-- エージェントロジックとハーネス基盤を分離する
-- 本番品質は、モデル単体ではなく実行基盤全体で決まる
-- モデル改善に応じて不要な制御を削除できる構造にする
+### 一次的な根拠
 
-参考記事に記載されている性能値、改善率、推奨閾値は、環境やタスクによって変わります。本書では、それらを普遍的な基準としては採用せず、設計パターンだけを参考にしています。
+1. **NIST AI Risk Management Framework 1.0 / Playbook**  
+   AIリスクをGovern・Map・Measure・Manageの継続的な活動として扱い、設計、評価、運用、第三者、Documentationをライフサイクル全体で管理するために参照します。AI RMFは任意利用のFrameworkであり、現在改訂作業中です。
+2. **NIST AI 600-1: Generative AI Profile**  
+   生成AI固有のリスクを、既存のAI RMFへ追加して扱うために参照します。
+3. **OWASP AI Agent Security Cheat Sheet / OWASP Top 10 for Agentic Applications 2026 / OWASP GenAI LLM Top 10 2026**  
+   Tool misuse、Prompt Injection、Memory poisoning、Identity / Privilege abuse、Supply chain、Unexpected code execution、Human-Agent trustなどの脅威と対策を整理するために参照します。
+4. **OpenTelemetry Semantic Conventions**  
+   Trace、Metric、Logの命名と相関を揃えるために参照します。GenAI固有のSemantic Conventionsは独立Repositoryへ移され、Development状態の項目を含むため、採用時にVersionを固定します。
+5. **採用するModel・Cloud・Agent SDKの公式文書**  
+   Tool schema、停止理由、Rate limit、Data handling、Authentication、Sandbox、Provider固有の制約は、一般論ではなく採用製品のCurrent docsを正本とします。
+
+### 補助的な参考情報
+
+公開投稿と[Agent Harness](https://agent-harness.ai/)の公開記事は、繰り返し現れる設計論点の抽出と、実務上の整理へ補助的に使用します。個別記事の性能値、改善率、閾値は普遍的な推奨値として採用しません。
+
+本文の主要主張と参考文献の対応は、付録Fにまとめます。
 
 ---
 
@@ -94,10 +216,13 @@ language: "ja"
 11. [第10章 セキュリティと人間参加型制御](#chapter-10)
 12. [第11章 マルチエージェント統合運用](#chapter-11)
 13. [第12章 導入順序と本番移行](#chapter-12)
-14. [付録A 判断基準早見表](#appendix-a)
-15. [付録B 実装テンプレート集](#appendix-b)
-16. [付録C 本番運用チェックリスト](#appendix-c)
-17. [付録D 参考文献](#appendix-d)
+14. [第13章 並行実行・一貫性・不確定結果](#chapter-13)
+15. [付録A 判断基準早見表](#appendix-a)
+16. [付録B 実装テンプレート集](#appendix-b)
+18. [付録D 共通用語集](#appendix-d)
+19. [付録E 最小参照実装](#appendix-e)
+20. [付録F 主要主張と参考根拠の対応](#appendix-f)
+21. [付録G 参考文献](#appendix-g)
 
 ---
 
@@ -321,6 +446,18 @@ AIエージェントは次のように失敗します。
 
 **削除可能性(Design for Deletion)**を設計品質の一部として扱います。
 
+## 原則14　制御の強制力を区別する
+
+制御は、同じ「ルール」であっても強制力が異なります。
+
+| 段階 | 目的 | 例 |
+|---|---|---|
+| 行動誘導 | Agentへ望ましい行動を伝える | Prompt、System Instruction、Skill、手順書 |
+| 運用統制 | 通常フローで自動確認・中止する | Hook、Policy middleware、Validation Script、Approval UI |
+| 独立した強制境界 | Agent自身が変更・無視できない境界で拒否する | OS、Container、Network Policy、Credential Scope、DB Authorization、CI、Protected Branch |
+
+高リスク操作の安全性を、行動誘導だけへ依存させません。越えてはならない境界は、Agentの出力や作業Workspaceから独立した層で強制します。
+
 ---
 
 <a id="chapter-1"></a>
@@ -375,19 +512,22 @@ AIエージェントは次のように失敗します。
 - 失敗時の再開が必要
 - 結果の説明責任や監査が必要
 
-## 1.4 設計判断チェックリスト
+## 1.4 制御の強制力を配置する
 
-- [ ] モデル、実行基盤、ハーネス、製品の責任を分けた
-- [ ] LLMが自分で権限を付与できない
-- [ ] 業務上の正本(Source of Truth)を定義した
-- [ ] 副作用を発生させる層を特定した
-- [ ] 人間だけが決定できる事項を定義した
-- [ ] モデル変更で影響する範囲を切り分けられる
-- [ ] ハーネス固有の回避策を削除・交換できる
+各要求について、必要な強制力を決めます。
 
----
+```text
+望ましい作法
+→ Prompt / Skill
 
-<a id="chapter-2"></a>
+忘れた場合に自動検出したい
+→ Hook / Validation / Policy middleware
+
+絶対に越えてはならない
+→ OS / Container / Network / Credential / Database / CI
+```
+
+例として「本番DBを削除しない」はPromptへ書くだけでは不十分です。本番Credentialを渡さない、対象DBへ接続できないNetworkに置く、DB Roleで`DROP`を拒否する、という独立境界へ移します。
 
 # 第2章 タスク契約・計画・完了条件
 
@@ -459,19 +599,37 @@ AIエージェントは次のように失敗します。
 - 未確定事項
 - リスク
 
-## 2.5 証拠の段階(Evidence Ladder)
+## 2.5 証拠設計(Evidence Design)
 
-| 段階 | 証拠 |
+証拠の強さは、Testの種類だけでは決まりません。少なくとも次の軸で評価します。
+
+| 軸 | 確認する問い |
 |---|---|
-| 0 | エージェントの自己申告のみ |
-| 1 | コード・設定を読んだ |
-| 2 | 静的検査に成功した |
-| 3 | 単体テストに成功した |
-| 4 | 統合テスト・E2Eに成功した |
-| 5 | 実際の利用フローを再現した |
-| 6 | 本番相当環境で観測した |
+| 関連性 | 完了条件そのものを検証しているか |
+| 完全性 | 正常系だけでなく、対象となる失敗系・境界条件を含むか |
+| 独立性 | Writer Agentの自己申告だけでなく、別Process・CI・人間が再確認したか |
+| 改ざん耐性 | Agentが書込み可能な場所だけに証拠が置かれていないか |
+| 鮮度 | 現在のCode、Config、Model、Tool Policyに対する結果か |
+| 対象固定 | Commit、Artifact hash、入力、環境Versionへ結び付いているか |
+| 再現性 | 同じ条件で再実行できるか |
+| 不確実性 | 実行できなかった項目や観測限界を明記しているか |
 
-すべてのタスクに最上位の証拠は必要ありません。タスク契約で、必要な証拠段階を決めます。
+### 証拠の生成元
+
+| 種類 | 位置付け |
+|---|---|
+| Agent生成証拠 | 作業中の自己検証。速いが、Agent自身が選択・改変できる可能性がある |
+| 決定論的検証証拠 | Test、Schema、Policy、Queryなど、同じ入力に対して機械的に確認した結果 |
+| 独立実行証拠 | Clean Environment、Trusted CI、別権限Process、別Reviewerが再実行した結果 |
+| 人間観測証拠 | UI、業務妥当性、高リスク判断、最終Acceptanceなど、機械検証だけでは不足する確認 |
+
+すべてのタスクに最も強い証拠は必要ありません。リスク別の目安は次です。
+
+| リスク | 例として求める証拠 |
+|---|---|
+| 低 | Agent生成証拠 + 基本Validation |
+| 中 | 決定論的検証 + Diff / Artifact + 必要に応じたClean再実行 |
+| 高 | Trusted CIまたは独立環境 + Human Gate + Commit / Action hashへ結び付いた監査証拠 |
 
 ## 2.6 完了判定
 
@@ -488,22 +646,6 @@ AND
 AND
 残存リスクが報告されている
 ```
-
-## 2.7 チェックリスト
-
-- [ ] 目的と成果を分けて記載した
-- [ ] 完了条件が機械または人間により確認できる
-- [ ] 変更可能範囲が明確
-- [ ] 禁止事項が明確
-- [ ] 必要な証拠段階を決めた
-- [ ] 重要な曖昧さだけを質問する
-- [ ] 計画の各工程に検証方法がある
-- [ ] ロールバック方法または補償処理を定義した
-- [ ] 残存リスクを完了報告へ含める
-
----
-
-<a id="chapter-3"></a>
 
 # 第3章 エージェントループと停止制御
 
@@ -647,23 +789,6 @@ while True:
         return stop("no_progress", state)
 ```
 
-## 3.8 チェックリスト
-
-- [ ] 状態遷移が明示されている
-- [ ] 完了条件がループ外から与えられる
-- [ ] 複数種類の実行予算がある
-- [ ] 進展なしを検知できる
-- [ ] エラーを分類している
-- [ ] 再試行可能・不可能を分けている
-- [ ] 副作用の再試行に冪等性がある
-- [ ] 停止理由が構造化されている
-- [ ] 中断後に状態から再開できる
-- [ ] 人間への引継ぎ条件がある
-
----
-
-<a id="chapter-4"></a>
-
 # 第4章 コンテキスト設計
 
 ## 4.1 コンテキストの役割
@@ -800,23 +925,6 @@ context_budget:
 - 不可視注入の内容
 - キャッシュヒット率
 
-## 4.9 チェックリスト
-
-- [ ] システム指示の責任を説明できる
-- [ ] 常時情報と必要時情報を分けた
-- [ ] カテゴリ別の使用量を観測できる
-- [ ] 古い履歴を無制限に保持していない
-- [ ] 圧縮後に残す項目を定義した
-- [ ] 大きなツール結果を外部へ退避できる
-- [ ] 検索結果に出典と鮮度がある
-- [ ] 機密情報を不用意に含めない
-- [ ] プロンプトキャッシュを壊す可変要素を把握した
-- [ ] コンテキスト不足時の停止・再取得経路がある
-
----
-
-<a id="chapter-5"></a>
-
 # 第5章 ツール設計と実行統制
 
 ## 5.1 ツールはエージェントの操作面
@@ -938,24 +1046,6 @@ HTTP 200でも失敗の場合があります。
 - セキュリティ境界
 - 監査必須操作
 
-## 5.9 チェックリスト
-
-- [ ] 1ツール1責任
-- [ ] 使用条件・不使用条件が説明にある
-- [ ] 入力スキーマが狭い
-- [ ] 認可がLLMの外にある
-- [ ] 副作用リスクが分類されている
-- [ ] 冪等性が必要な操作を特定した
-- [ ] 出力スキーマと事後条件を検証する
-- [ ] エラーコードが構造化されている
-- [ ] ツール結果に機密情報を含めない
-- [ ] 遅延、成功率、再試行率を測る
-- [ ] ツール無効化時に残留設定や権限が残らない
-
----
-
-<a id="chapter-6"></a>
-
 # 第6章 状態・セッション・記憶
 
 ## 6.1 用語を分ける
@@ -968,20 +1058,39 @@ HTTP 200でも失敗の場合があります。
 成果物 = ファイル、計画、ログ、評価結果などの保存対象
 ```
 
-## 6.2 イベントログを正本にする
+## 6.2 正本(Source of Truth)を用途別に分ける
 
-モデルが作った要約だけを正本にすると、誤った要約が事実になります。
+イベントログは監査・再生へ有効ですが、常に業務上の正本にする必要はありません。次を分けます。
 
-推奨構造：
+| 対象 | 代表的な正本 |
+|---|---|
+| 業務データ | 業務Database、外部System、Version管理されたArtifact |
+| 現在のAgent状態 | State Store、Workflow Engine、Checkpoint |
+| 監査・再生 | 追記専用イベントログ、Trace、CI Artifact |
+| モデルへ渡す情報 | 上記から派生したContext、要約、Retrieved documents |
+| 長期記憶 | 検証・期限・Tenant Scopeを伴うMemory Store |
+
+推奨される関係は次です。
 
 ```text
-追記専用イベントログ
-→ 派生したセッション状態
+業務データ / 現在状態 / 実行記録
+→ 検証可能な派生Context
 → 要約
 → 記憶候補
 → 検証・昇格
 → 長期記憶
 ```
+
+イベントログを再生の正本にする場合は、次を満たすか確認します。
+
+- Event schemaをVersion管理できる
+- Duplicateと順序逆転を扱える
+- 個人情報の削除・Retention要件と両立できる
+- Snapshotと再生結果の整合性を検証できる
+- 業務DBとの二重正本を発生させない
+- 保存量と再生時間を運用できる
+
+モデルが作った要約だけを、現在状態や業務事実の正本にしません。
 
 ## 6.3 保存すべき状態
 
@@ -1069,23 +1178,6 @@ HTTP 200でも失敗の場合があります。
 - deletion_policy
 
 古い記憶を上書きするのではなく、置換関係を残すと監査しやすくなります。
-
-## 6.9 チェックリスト
-
-- [ ] コンテキスト、状態、記憶を分離した
-- [ ] 生イベントを残している
-- [ ] 再開に必要なチェックポイントがある
-- [ ] 記憶に出典がある
-- [ ] 権威性と鮮度を記録する
-- [ ] 置換関係を管理できる
-- [ ] 完全一致検索経路がある
-- [ ] 記憶を削除・忘却できる
-- [ ] 個人情報の保持期間を定義した
-- [ ] 記憶検索結果を無条件に真実として扱わない
-
----
-
-<a id="chapter-7"></a>
 
 # 第7章 検証・評価・レビュー
 
@@ -1217,23 +1309,6 @@ release_gate:
 - ルーティング
 - 権限ポリシー
 - 完了判定
-
-## 7.9 チェックリスト
-
-- [ ] 検証と評価を分けた
-- [ ] 各ツール境界で出力を検証する
-- [ ] 決定論的検証を優先する
-- [ ] 正常系だけでなく失敗系がある
-- [ ] 軌跡と成果の両方を評価する
-- [ ] コストと遅延も評価対象
-- [ ] LLM評価を校正している
-- [ ] 本番失敗を回帰ケースへ追加する
-- [ ] リリース前後で同じ指標を追う
-- [ ] 評価結果から原因箇所まで追跡できる
-
----
-
-<a id="chapter-8"></a>
 
 # 第8章 可観測性・トレース・再生
 
@@ -1371,23 +1446,6 @@ alerts:
   unsafe_tool_attempts_threshold: 1
 ```
 
-## 8.8 チェックリスト
-
-- [ ] 1タスクを1つのtrace_idで追える
-- [ ] モデル、検索、ツール、状態を関連付けられる
-- [ ] 親子エージェントの関係を追える
-- [ ] 停止理由を保存する
-- [ ] 費用を機能・顧客・工程へ帰属できる
-- [ ] 生イベントと派生ビューを分けた
-- [ ] 再生可能な形式で保存する
-- [ ] 機密情報をマスキングする
-- [ ] 保存期間とアクセス権限を定義した
-- [ ] 本番トレースを評価改善へ戻す
-
----
-
-<a id="chapter-9"></a>
-
 # 第9章 信頼性・コスト・性能・回復
 
 ## 9.1 信頼性を構成する要素
@@ -1510,23 +1568,6 @@ circuit_breaker:
 - 承認基盤が停止した場合は高リスク操作を拒否
 - 記憶が利用できない場合は現在セッションだけで動く
 
-## 9.9 チェックリスト
-
-- [ ] 工程別タイムアウトがある
-- [ ] 再試行上限がある
-- [ ] フォールバックの条件を定義した
-- [ ] 高リスク操作のフォールバックを制限した
-- [ ] タスク種別ごとのコスト上限がある
-- [ ] 成功当たりコストを測る
-- [ ] 遅延を工程別に分解できる
-- [ ] 冪等性と補償処理がある
-- [ ] 障害時の機能縮退を定義した
-- [ ] 回復後に自動再開してよい処理を定義した
-
----
-
-<a id="chapter-10"></a>
-
 # 第10章 セキュリティと人間参加型制御
 
 ## 10.1 すべての外部情報を信頼しない
@@ -1630,22 +1671,26 @@ circuit_breaker:
 - 上書き率・差戻し率を測る
 - 承認者が判断できない情報量にしない
 
-## 10.8 チェックリスト
+## 10.8 脅威モデルを明示する
 
-- [ ] 外部情報を非信頼入力として扱う
-- [ ] LLMの外に認可層がある
-- [ ] 最小権限を適用した
-- [ ] 秘密情報をコンテキストへ直接入れない
-- [ ] サンドボックスを利用する
-- [ ] 操作をリスク分類した
-- [ ] 高リスク操作に人間承認がある
-- [ ] 承認画面に差分とロールバックがある
-- [ ] 監査ログを残す
-- [ ] 事故時に権限を即時取消しできる
+Prompt Injectionだけでなく、Agentが持つTool、Identity、Memory、外部接続、Supply Chainまで脅威モデルへ含めます。
 
----
+| 脅威 | 代表的な失敗 | 主な制御 |
+|---|---|---|
+| データ流出 | Context、Tool引数、URL、最終出力から秘密が外部へ出る | Data classification、Egress制御、Redaction、Output validation |
+| SSRF | Agentが内部Metadata ServiceやPrivate endpointへアクセスする | URL allowlist、DNS/IP検証、Network namespace、Proxy policy |
+| Cross-tenant漏えい | 別User・別TenantのMemoryやRAG文書を取得する | Tenant-bound authorization、Row-level security、Cache key分離 |
+| 悪意あるTool・MCP・Skill | Tool descriptionやPackageが権限を悪用する | 署名・Source review、Version pin、Tool allowlist、Sandbox |
+| Supply Chain | 依存Package、Container、Plugin更新から侵害される | Lockfile、Artifact署名、SBOM、Dependency review、隔離Build |
+| Memory / RAG汚染 | 悪意ある指示や誤情報が永続化する | Source provenance、昇格審査、TTL、Tenant分離、再検証 |
+| Log / Trace漏えい | Prompt、PII、Token、Credentialが観測基盤へ残る | Opt-in content logging、Masking、Retention、Access control |
+| Approvalすり替え | 承認後にTool引数・対象Versionが変わる | 正規化Action hash、Expiry、Replay protection、実行直前再検証 |
+| 間接Prompt Injection | Web、Email、Tool resultにある命令をSystem命令として扱う | Instruction/Data分離、Tool authorization、Untrusted label |
+| 権限昇格 | 低権限Agentが上位CredentialやToolへ到達する | Capability isolation、短期Credential、Policy service |
+| Sandbox回避 | Shell、Symlink、Mount、Kernel経由で境界を越える | Hardened runtime、Patch、No-new-privileges、Defense in depth |
+| 連鎖障害 | 1 Agentの侵害が他Agentへ伝播する | Message schema、Trust boundary、Circuit breaker、Quarantine |
 
-<a id="chapter-11"></a>
+OWASPのAI Agent Security Cheat SheetとAgentic Applications Top 10を、脅威の網羅性を確認する外部基準として利用します。ただし、自組織の資産、Actor、Data Flow、Trust Boundaryに合わせたThreat Modelを別途作成します。
 
 # 第11章 マルチエージェント統合運用
 
@@ -1753,23 +1798,6 @@ orchestration_budget:
 - 失敗を多数決で無視する
 - 親が待つだけで他の仕事をしない
 - コスト上限がない
-
-## 11.8 チェックリスト
-
-- [ ] 分離理由が明確
-- [ ] 単一エージェントでは不足する理由がある
-- [ ] 子へ最小限のコンテキストを渡す
-- [ ] 子ごとに権限を制限する
-- [ ] 引継ぎスキーマがある
-- [ ] 親子トレースを関連付ける
-- [ ] 起動予算と深さ上限がある
-- [ ] 同じ対象の競合編集を防ぐ
-- [ ] 独立レビューは新しいコンテキストで行う
-- [ ] 統合責任者を1つにする
-
----
-
-<a id="chapter-12"></a>
 
 # 第12章 導入順序と本番移行
 
@@ -1898,7 +1926,133 @@ orchestration_budget:
 
 ---
 
-<a id="appendix-a"></a>
+<a id="chapter-13"></a>
+
+# 第13章 並行実行・一貫性・不確定結果
+
+## 13.1 `success`と`failure`だけでは足りない
+
+外部副作用を伴うAgentでは、TimeoutやProcess Crashの時点で結果を断定できないことがあります。
+
+```text
+Request送信
+→ 外部Systemで処理成功
+→ Response受信前にTimeout
+→ Agent側は成功か失敗か不明
+```
+
+状態候補を明示します。
+
+| 状態 | 意味 |
+|---|---|
+| `succeeded` | 事後条件と証拠を確認できた |
+| `failed` | 副作用が発生していない、または失敗を確認できた |
+| `uncertain` | 外部で成功した可能性があり、再送してよいか判断できない |
+| `reconciling` | 外部照会・監査Log・Webhookで結果を確認中 |
+| `compensating` | 成功済み操作の取消し・補償を実施中 |
+| `needs_human` | 自動判定できず、人間判断が必要 |
+
+`uncertain`を単純な`failed`へ変換して再試行すると、二重送信・二重決済・重複作成につながります。
+
+## 13.2 At-least-onceと冪等性
+
+分散処理では、TaskやMessageが少なくとも1回配信され、重複する前提で設計する場合があります。
+
+- 副作用ToolへIdempotency Keyを渡す
+- 同じKeyの結果を保存し、再実行時に照合する
+- KeyをTask ID、Tool、正規化引数、対象Versionへ結び付ける
+- ProviderがIdempotencyを支援しない場合、事前予約Recordまたは重複検出を用意する
+- `exactly once`という表現を、Transaction境界を説明せずに使用しない
+
+## 13.3 重複取得を防ぐLease
+
+複数Workerが同一Taskを取得する場合、Task Ownerと有効期限を保存します。
+
+```text
+worker_id
+lease_until
+task_version
+heartbeat_at
+```
+
+Lease失効後の再取得では、前Workerの外部副作用が残っていないかをReconciliationしてから継続します。
+
+## 13.4 楽観的ロックとCompare-and-Swap
+
+複数Agentや人間が同じ状態を更新する場合、読取り時のVersionを実行時に再確認します。
+
+```sql
+UPDATE tasks
+SET state = :next_state, version = version + 1
+WHERE task_id = :task_id
+  AND version = :expected_version;
+```
+
+更新件数が0なら、前提が古いため再計画または人間確認へ進みます。
+
+## 13.5 外部副作用と保存の境界
+
+次の2つを1つのLocal Transactionにできない場合があります。
+
+```text
+外部APIへ送信
+Local DBへ結果保存
+```
+
+対策候補：
+
+- Transactional Outbox / Inbox
+- ProviderのIdempotency Key
+- External Request IDの保存
+- WebhookまたはStatus APIによる照会
+- Reconciliation Job
+- 補償処理(Compensating Action)
+
+Outbox / Inboxは万能ではありません。外部Providerの実行保証と、自Systemの再送保証を分けて記述します。
+
+## 13.6 承認対象を固定する
+
+承認後に対象が変更されるTime-of-check to time-of-use問題を防ぎます。
+
+承認Recordへ含める候補：
+
+- actor
+- tool_name
+- normalized_arguments
+- target_resource_id
+- expected_resource_version
+- action_hash
+- issued_at / expires_at
+- policy_version
+- approver
+
+実行直前にAction Hash、対象Version、承認期限、権限を再検証します。
+
+## 13.7 Multi-Agentの同時更新
+
+並列Writerを許可する場合：
+
+- File、Record、DomainごとにOwnerを分ける
+- Shared generated fileを避ける
+- Public contractを先に固定する
+- Base Versionを引継ぎ契約へ含める
+- Merge後に全体検証する
+- ConflictをModel任せで黙って解消しない
+
+## 13.8 再開時の判断
+
+Checkpointには「何を試みたか」だけでなく、外部処理の確認情報を含めます。
+
+```text
+last_committed_step
+pending_external_request_ids
+uncertain_actions
+idempotency_keys
+expected_versions
+active_leases
+valid_approvals
+next_reconciliation_action
+```
 
 # 付録A 判断基準早見表
 
@@ -2380,149 +2534,430 @@ required_output:
 
 ---
 
-<a id="appendix-c"></a>
+# 付録D 共通用語集
 
-# 付録C 本番運用チェックリスト
+本付録を、本シリーズの共通用語の正本とします。活用ハーネスは同じ定義を要約して再掲します。
 
-## C.1 目的・スコープ
+| 用語 | 本シリーズでの意味 |
+|---|---|
+| ハーネス(Harness) | モデルの周囲で、コンテキスト、ツール、権限、状態、検証、評価、可観測性、コスト、回復を管理する実行・運用層 |
+| タスク契約(Task Contract) | 目的、期待状態、範囲、禁止事項、完了条件、必要証拠、停止条件を開始前に固定した契約 |
+| 完了条件(Completion Criteria) | タスクを終了してよいと判定する、観測可能な条件 |
+| 証拠(Evidence) | 完了条件を満たしたことを確認するための、コマンド結果、差分、ログ、テスト、観測記録など |
+| 実行予算(Execution Budget) | Step、時間、Tool Call、費用、再試行、並列数などの実行上限 |
+| 検証(Verification) | 特定の出力・変更・事後条件が期待どおりかを確認する処理 |
+| 評価(Evaluation) | 代表タスク集合を使い、システム品質を比較・測定する処理 |
+| レビュー(Review) | 設計、差分、証拠、残存リスクを別の視点で吟味する行為 |
+| 状態(State) | 現在の進行段階、完了項目、未完了項目、承認、予算使用量など、再開に必要な情報 |
+| コンテキスト(Context) | そのModel Callでモデルへ実際に提示する情報 |
+| 記憶(Memory) | 将来のタスクで再利用するため、検証・期限・スコープを伴って保存した情報 |
+| セッション(Session) | 会話、イベント、状態、成果物を継続的に関連付ける実行単位 |
+| 引継ぎ(Handoff) | 別の人・Agent・Sessionへ、目的、状態、制約、証拠、次の操作を構造化して渡すこと |
+| 人間ゲート(Human Gate) | 人間の判断または承認がなければ次へ進めない境界 |
+| 停止条件(Stop Condition) | 完了、予算超過、同一失敗、権限不足、不確定結果など、実行を止める条件 |
+| 完了報告(Completion Report) | 実施内容、完了条件、証拠、未実施事項、残存リスク、Rollbackをまとめた最終成果物 |
 
-- [ ] 解く業務が一文で説明できる
-- [ ] エージェントを使う必要性がある
-- [ ] 決定論的コードへ残す処理を定義した
-- [ ] 操作可能範囲を定義した
-- [ ] 禁止操作を定義した
+### 補足
 
-## C.2 完了・証拠
-
-- [ ] 完了条件が測定可能
-- [ ] 必要な証拠段階を決めた
-- [ ] エージェントの自己申告だけで完了しない
-- [ ] 残存リスクを報告する
-- [ ] 未完了・部分完了を表現できる
-
-## C.3 ループ
-
-- [ ] 実行予算がある
-- [ ] 進展なしを検知する
-- [ ] エラー分類がある
-- [ ] 停止理由が構造化されている
-- [ ] 中断・再開を検証した
-
-## C.4 コンテキスト
-
-- [ ] 優先順位がある
-- [ ] 常時情報と必要時情報を分けた
-- [ ] 圧縮後の保持項目を定義した
-- [ ] 大きな結果を外部退避する
-- [ ] 出典と鮮度を持つ
-
-## C.5 ツール
-
-- [ ] 入力検証
-- [ ] 出力検証
-- [ ] 認可
-- [ ] 事後条件
-- [ ] 冪等性
-- [ ] 監査
-- [ ] 構造化エラー
-
-## C.6 状態・記憶
-
-- [ ] 生イベントを保存
-- [ ] チェックポイントがある
-- [ ] 記憶へ昇格する規則がある
-- [ ] 記憶を削除できる
-- [ ] 古い記憶の置換関係がある
-
-## C.7 検証・評価
-
-- [ ] 正常系
-- [ ] 境界値
-- [ ] 失敗系
-- [ ] 停止系
-- [ ] セキュリティ系
-- [ ] コスト・遅延
-- [ ] 本番障害から回帰ケースを追加
-
-## C.8 可観測性
-
-- [ ] タスク全体を追跡できる
-- [ ] ツール引数と結果を追跡できる
-- [ ] 状態遷移を追跡できる
-- [ ] 費用を帰属できる
-- [ ] 機密情報を除外する
-- [ ] 再生可能
-
-## C.9 信頼性
-
-- [ ] 工程別タイムアウト
-- [ ] 再試行上限
-- [ ] フォールバック条件
-- [ ] 機能縮退
-- [ ] ロールバック・補償処理
-- [ ] サーキットブレーカー
-
-## C.10 セキュリティ
-
-- [ ] 非信頼入力を区別
-- [ ] 最小権限
-- [ ] サンドボックス
-- [ ] 秘密情報の分離
-- [ ] 高リスク操作の承認
-- [ ] 権限取消し
-
-## C.11 人間参加
-
-- [ ] 人間判断が必要な地点を限定
-- [ ] 承認に差分・理由・リスクがある
-- [ ] 承認疲れを測る
-- [ ] 差戻し・拒否・条件付き承認が可能
-- [ ] 最終責任者が明確
-
-## C.12 マルチエージェント
-
-- [ ] 分離理由がある
-- [ ] 引継ぎ契約がある
-- [ ] 親子トレースがある
-- [ ] 起動予算がある
-- [ ] 権限を分けた
-- [ ] 統合責任者が1つ
-
-## C.13 運用
-
-- [ ] アラート対応者が決まっている
-- [ ] 緊急停止方法がある
-- [ ] モデル・プロンプト・ツールのバージョンを保存する
-- [ ] 変更後に回帰評価を実行する
-- [ ] 不要になった制御を削除する定期レビューがある
+- `Verification`は個別成果の確認、`Evaluation`は代表Dataset上の比較測定、`Review`は別視点からの吟味です。
+- `Context`と`Memory`を同一視しません。Memoryは保存層、ContextはそのCallへ提示する選択結果です。
+- `Evidence`と`Completion Report`を同一視しません。Reportは証拠への索引であり、証拠そのものではありません。
+- `Human Gate`はApprovalだけではなく、仕様決定、例外受入れ、Risk Acceptanceも含みます。
 
 ---
 
-<a id="appendix-d"></a>
+<a id="appendix-e"></a>
 
-# 付録D 参考文献
+# 付録E 最小参照実装
 
-本書は、公開投稿群から反復して現れる設計論点を抽出し、個別投稿の紹介やアカウント情報を掲載せず、AIエージェント開発の一般的な実務原則として再構成しています。
+`examples/minimal_agent_runtime.py`は、Provider非依存の最小Runtime例です。
 
-Agent Harnessの次の公開ページ・記事を補助的な参考文献として使用しました。
+含むもの：
 
-1. Agent Harness — Home / Harness Engineering Knowledge Graph  
-   https://agent-harness.ai/
+- Task Contract
+- Execution Budgetの強制
+- Tool入力・出力Validation
+- Tool allowlist
+- 高リスクToolのAction hash付きApprovalと承認状態の記録
+- Fileへ保存するIdempotency Store
+- Checkpoint保存と再開
+- `uncertain`を含むStop Reason
+- Completion CriteriaとEvidenceの照合
+- 同一Tool Call・同一Errorの停止
 
-2. Harness Engineering: The 80% Factor in Agent Reliability  
-   https://agent-harness.ai/blog/what-is-harness-engineering/
+> **例:** 学習用の最小構成です。Production向けのAuthentication、暗号化、Durable Queue、Database Transaction、Distributed Lock、Telemetry Exporter、Secret管理を省略しています。数値も説明用です。
 
-3. Getting Started with Agent Harness: Your First Agent in 30 Minutes  
-   https://agent-harness.ai/blog/getting-started-with-agent-harness-your-first-agent-in-30-minutes/
+実行例：
 
-4. Agent Harness vs LangChain: An Honest Comparison for 2026  
-   https://agent-harness.ai/blog/agent-harness-vs-langchain-an-honest-comparison-for-2026/
+```bash
+cd examples
+python -m unittest -v
+```
 
-5. Inside the Deep Agent: Understanding Advanced AI Coding Tools  
-   https://agent-harness.ai/blog/inside-the-deep-agent-understanding-advanced-ai-coding-tools/
+```python
+"""Provider-neutral minimum harness for a tool-using AI agent.
 
-6. Agentic AI Frameworks 2026: LangGraph vs CrewAI vs AutoGen vs OpenAI Symphony  
-   https://agent-harness.ai/blog/agentic-ai-frameworks-2026-langgraph-vs-crewai-vs-autogen-vs-openai-symphony/
+All budgets are examples. This omits production authentication, encryption,
+distributed locking, queues, and telemetry exporters.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import time
+from dataclasses import asdict, dataclass, field
+from enum import Enum
+from pathlib import Path
+from typing import Any, Callable, Protocol
+
+
+class RiskLevel(str, Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class StopReason(str, Enum):
+    COMPLETED = "completed"
+    MAX_STEPS = "max_steps_exceeded"
+    TIMEOUT = "timeout"
+    DUPLICATE_ACTION = "duplicate_action"
+    REPEATED_ERROR = "repeated_error"
+    INVALID_ACTION = "invalid_action"
+    APPROVAL_DENIED = "approval_denied"
+    UNCERTAIN = "uncertain_external_result"
+
+
+@dataclass(frozen=True)
+class ExecutionBudget:
+    # Example values only; replace them using representative-task measurements.
+    max_steps: int = 8
+    max_elapsed_seconds: float = 30.0
+    same_action_limit: int = 2
+    same_error_limit: int = 2
+
+
+@dataclass(frozen=True)
+class TaskContract:
+    task_id: str
+    objective: str
+    completion_criteria: tuple[str, ...]
+    allowed_tools: frozenset[str]
+    workspace: Path
+
+
+@dataclass(frozen=True)
+class Action:
+    kind: str  # "tool" or "complete"
+    tool_name: str | None = None
+    arguments: dict[str, Any] = field(default_factory=dict)
+    summary: str | None = None
+    evidence_refs: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ToolResult:
+    status: str  # "success", "error", or "uncertain"
+    output: dict[str, Any] = field(default_factory=dict)
+    error_type: str | None = None
+    external_request_id: str | None = None
+
+
+@dataclass(frozen=True)
+class ToolSpec:
+    name: str
+    risk: RiskLevel
+    validate_input: Callable[[dict[str, Any]], dict[str, Any]]
+    execute: Callable[[dict[str, Any]], ToolResult]
+    validate_output: Callable[[ToolResult], ToolResult]
+
+
+@dataclass
+class RunState:
+    task_id: str
+    started_at_epoch: float = field(default_factory=time.time)
+    phase: str = "running"
+    step: int = 0
+    observations: list[dict[str, Any]] = field(default_factory=list)
+    evidence_refs: list[str] = field(default_factory=list)
+    last_error_type: str | None = None
+    same_error_count: int = 0
+    action_counts: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class RunResult:
+    stop_reason: StopReason
+    summary: str
+    state: RunState
+
+
+class DecisionProvider(Protocol):
+    def decide(self, task: TaskContract, state: RunState) -> Action: ...
+
+
+def stable_hash(value: Any) -> str:
+    normalized = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+class JsonFile:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+
+    def read(self) -> dict[str, Any]:
+        if not self.path.exists():
+            return {}
+        return json.loads(self.path.read_text(encoding="utf-8"))
+
+    def write(self, value: dict[str, Any]) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self.path.with_suffix(self.path.suffix + ".tmp")
+        temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+        temporary.replace(self.path)
+
+
+class IdempotencyStore:
+    """Persists successful or uncertain results so retries do not repeat side effects."""
+
+    def __init__(self, path: Path) -> None:
+        self.file = JsonFile(path)
+
+    def get(self, key: str) -> ToolResult | None:
+        raw = self.file.read().get(key)
+        return ToolResult(**raw) if raw else None
+
+    def put(self, key: str, result: ToolResult) -> None:
+        if result.status not in {"success", "uncertain"}:
+            return
+        data = self.file.read()
+        data[key] = asdict(result)
+        self.file.write(data)
+
+
+class CheckpointStore:
+    def __init__(self, path: Path) -> None:
+        self.file = JsonFile(path)
+
+    def save(self, state: RunState) -> None:
+        self.file.write(asdict(state))
+
+    def load(self, task_id: str) -> RunState | None:
+        raw = self.file.read()
+        if not raw or raw.get("task_id") != task_id:
+            return None
+        return RunState(**raw)
+
+
+class ApprovalService:
+    """Binds approval to the exact normalized tool action."""
+
+    def __init__(self, approve: Callable[[str, str], bool]) -> None:
+        self._approve = approve
+
+    def authorize(self, tool: ToolSpec, args: dict[str, Any]) -> tuple[bool, str]:
+        digest = stable_hash({"tool": tool.name, "args": args})
+        return (True, digest) if tool.risk is not RiskLevel.HIGH else (self._approve(tool.name, digest), digest)
+
+
+class AgentRuntime:
+    def __init__(self, tools: list[ToolSpec], budget: ExecutionBudget,
+                 approvals: ApprovalService, idempotency: IdempotencyStore,
+                 checkpoints: CheckpointStore) -> None:
+        self.tools = {tool.name: tool for tool in tools}
+        self.budget = budget
+        self.approvals = approvals
+        self.idempotency = idempotency
+        self.checkpoints = checkpoints
+
+    def run(self, task: TaskContract, model: DecisionProvider, *, resume: bool = False) -> RunResult:
+        state = self.checkpoints.load(task.task_id) if resume else None
+        state = state or RunState(task_id=task.task_id)
+        state.phase = "running"
+
+        while True:
+            if state.step >= self.budget.max_steps:
+                return self._stop(state, StopReason.MAX_STEPS, "step budget exhausted")
+            if time.time() - state.started_at_epoch > self.budget.max_elapsed_seconds:
+                return self._stop(state, StopReason.TIMEOUT, "elapsed-time budget exhausted")
+
+            try:
+                action = model.decide(task, state)
+            except Exception as exc:  # Adapter failures become structured stop results.
+                state.observations.append({"type": "decision_error", "message": str(exc)})
+                return self._stop(state, StopReason.INVALID_ACTION, "decision provider failed")
+            state.step += 1
+
+            if action.kind == "complete":
+                available = set(state.evidence_refs) | set(action.evidence_refs)
+                missing = [criterion for criterion in task.completion_criteria if criterion not in available]
+                if missing:
+                    state.observations.append({"type": "completion_rejected", "missing_evidence": missing})
+                    self.checkpoints.save(state)
+                    continue
+                state.evidence_refs = sorted(available)
+                return self._stop(state, StopReason.COMPLETED, action.summary or "completed")
+
+            if action.kind != "tool" or not action.tool_name:
+                return self._stop(state, StopReason.INVALID_ACTION, "unsupported action")
+            tool = self.tools.get(action.tool_name)
+            if tool is None or tool.name not in task.allowed_tools:
+                return self._stop(state, StopReason.INVALID_ACTION, "tool unavailable or outside scope")
+
+            try:
+                args = tool.validate_input(action.arguments)
+            except (TypeError, ValueError) as exc:
+                if self._record_error(state, "validation_error", str(exc)):
+                    return self._stop(state, StopReason.REPEATED_ERROR, "repeated validation error")
+                self.checkpoints.save(state)
+                continue
+
+            action_key = stable_hash({"tool": tool.name, "args": args})
+            state.action_counts[action_key] = state.action_counts.get(action_key, 0) + 1
+            if state.action_counts[action_key] > self.budget.same_action_limit:
+                return self._stop(state, StopReason.DUPLICATE_ACTION, "same tool call repeated")
+
+            state.phase = "awaiting_approval"
+            approved, action_digest = self.approvals.authorize(tool, args)
+            state.observations.append({"type": "approval", "action_digest": action_digest, "approved": approved})
+            self.checkpoints.save(state)
+            if not approved:
+                return self._stop(state, StopReason.APPROVAL_DENIED, "approval was denied")
+            state.phase = "running"
+
+            idem_key = stable_hash({"task": task.task_id, "tool": tool.name, "args": args})
+            try:
+                result = self.idempotency.get(idem_key) or tool.execute(args)
+                result = tool.validate_output(result)
+            except (TypeError, ValueError) as exc:
+                if self._record_error(state, "invalid_tool_output", str(exc)):
+                    return self._stop(state, StopReason.REPEATED_ERROR, "repeated invalid tool output")
+                self.checkpoints.save(state)
+                continue
+
+            self.idempotency.put(idem_key, result)
+            state.observations.append({"tool": tool.name, "args": args, "result": asdict(result)})
+            if result.status == "uncertain":
+                return self._stop(
+                    state, StopReason.UNCERTAIN,
+                    f"reconcile external request before retry: {result.external_request_id}",
+                )
+            if result.status == "error":
+                if self._record_error(state, result.error_type or "tool_error", "tool failed"):
+                    return self._stop(state, StopReason.REPEATED_ERROR, "same tool error repeated")
+            else:
+                state.last_error_type, state.same_error_count = None, 0
+                state.evidence_refs.extend(map(str, result.output.get("evidence_refs", [])))
+            self.checkpoints.save(state)
+
+    def _stop(self, state: RunState, reason: StopReason, summary: str) -> RunResult:
+        state.phase = "completed" if reason is StopReason.COMPLETED else "stopped"
+        self.checkpoints.save(state)
+        return RunResult(reason, summary, state)
+
+    def _record_error(self, state: RunState, error_type: str, message: str) -> bool:
+        state.same_error_count = state.same_error_count + 1 if state.last_error_type == error_type else 1
+        state.last_error_type = error_type
+        state.observations.append({"type": error_type, "message": message})
+        return state.same_error_count >= self.budget.same_error_limit
+
+
+def validate_read_args(args: dict[str, Any]) -> dict[str, Any]:
+    path = args.get("path")
+    if not isinstance(path, str) or not path:
+        raise ValueError("path must be a non-empty string")
+    return {"path": path}
+
+
+def validate_tool_result(result: ToolResult) -> ToolResult:
+    if not isinstance(result, ToolResult) or result.status not in {"success", "error", "uncertain"}:
+        raise ValueError("invalid tool result")
+    if result.status == "uncertain" and not result.external_request_id:
+        raise ValueError("uncertain result requires external_request_id")
+    return result
+
+
+def make_read_tool(workspace: Path) -> ToolSpec:
+    root = workspace.resolve()
+
+    def execute(args: dict[str, Any]) -> ToolResult:
+        target = (root / args["path"]).resolve()
+        if target != root and root not in target.parents:
+            return ToolResult(status="error", error_type="path_outside_workspace")
+        if not target.is_file():
+            return ToolResult(status="error", error_type="file_not_found")
+        return ToolResult("success", {"text": target.read_text(encoding="utf-8"),
+                                      "evidence_refs": [str(target)]})
+
+    return ToolSpec("read_file", RiskLevel.LOW, validate_read_args, execute, validate_tool_result)
+```
+
+---
+
+<a id="appendix-f"></a>
+
+# 付録F 主要主張と参考根拠の対応
+
+| 本書の主張・章 | 主な外部根拠 | 本書での使い方 |
+|---|---|---|
+| AIリスクをLifecycle全体で継続管理する | NIST AI RMF Core / Playbook | 第1章、第7章、第9章、第12章のGovern・Measure・Manageの基礎 |
+| 生成AI固有のリスクを既存Risk Managementへ追加する | NIST AI 600-1 Generative AI Profile | Context、評価、Monitoring、Incident、Third-party Riskの補助 |
+| Tool最小権限、Memory隔離、HITL、Multi-Agent Security | OWASP AI Agent Security Cheat Sheet | 第5章、第6章、第10章、第11章、第13章のSecurity requirement |
+| Goal hijack、Tool misuse、Identity abuse、Agentic supply chain、Unexpected code execution | OWASP Top 10 for Agentic Applications | 第10章のThreat ModelとSecurity Test Case |
+| LLM / GenAI Applicationの主要Risk。Prompt Injection、Sensitive Information Disclosure、Supply Chain、Excessive Agency、Unbounded Consumptionなどの版管理されたRisk分類 | OWASP GenAI LLM Top 10 2026、および必要に応じて2025版とのCrosswalk | 第3章、第5章、第9章、第10章の失敗モード。Risk IDと名称は参照Versionを固定 |
+| Trace / Metric / Logで共通命名を使う | OpenTelemetry Semantic Conventions | 第8章のAttribute設計。GenAI項目はStatusとVersionを確認して採用 |
+| Model単体ではなくContext、Tool、Verification、Observabilityを含むHarnessを見る | Agent Harness公開記事、公開投稿群 | 中核原則の整理。個別数値は採用しない |
+| Tool schema・停止理由・Rate limit・Data handlingはProviderごとに確認する | 採用Providerの公式文書 | 第3章、第5章、第8章、第9章の実装時の正本 |
+
+この対応表は、各Frameworkをそのまま実装Checklistへ変換するものではありません。自SystemのContext、Risk Tolerance、法令、データ分類、SLOへTailorします。
+
+---
+
+<a id="appendix-g"></a>
+
+# 付録G 参考文献
+
+## NIST
+
+- [AI Risk Management Framework](https://www.nist.gov/itl/ai-risk-management-framework)
+- [AI RMF Core](https://airc.nist.gov/airmf-resources/airmf/5-sec-core/)
+- [NIST AI RMF Playbook](https://www.nist.gov/itl/ai-risk-management-framework/nist-ai-rmf-playbook)
+- [Artificial Intelligence Risk Management Framework: Generative Artificial Intelligence Profile (NIST AI 600-1)](https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence)
+- [NIST AI Resource Center](https://airc.nist.gov/)
+
+> AI RMF 1.0とPlaybookは任意利用のFrameworkであり、2026年8月時点で改訂作業中です。適用時はCurrent versionを確認してください。
+
+## OWASP
+
+- [AI Agent Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/AI_Agent_Security_Cheat_Sheet.html)
+- [OWASP Top 10 for Agentic Applications for 2026](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/)
+- [OWASP GenAI LLM Top 10 2026](https://genai.owasp.org/resource/owasp-genai-llm-top-10-2026/)
+- [OWASP Gen AI Security Project](https://genai.owasp.org/)
+- [Insecure Agent Samples](https://genai.owasp.org/resource/insecure-agent-samples/)
+
+## OpenTelemetry
+
+- [OpenTelemetry Semantic Conventions](https://opentelemetry.io/docs/specs/semconv/)
+- [OpenTelemetry GenAI Semantic Conventions Repository](https://github.com/open-telemetry/semantic-conventions-genai)
+- [GenAI Attribute Registry](https://opentelemetry.io/docs/specs/semconv/registry/attributes/gen-ai/)
+
+> GenAI固有のSemantic ConventionsにはDevelopment状態の項目があります。Attribute名とSchema URLをVersion固定し、機密Contentの記録はOpt-inとします。
+
+## Provider・Security Frameworkの例
+
+- [Anthropic Tool Use](https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/overview)
+- [Google Secure AI Framework (SAIF)](https://saif.google/)
+- [Google SAIF Map](https://saif.google/secure-ai-framework)
+
+採用ProviderのTool Calling、Structured Output、Stop Reason、Rate Limit、Data Retention、Authentication、Regionality、Safety、LoggingのCurrent docsを実装時の正本にしてください。
+
+## Agent Harness参考情報
+
+- [Agent Harness Home](https://agent-harness.ai/)
+- [Harness Engineering: The 80% Factor in Agent Reliability](https://agent-harness.ai/blog/what-is-harness-engineering/)
+- [AI Agent Monitoring: Tools, Metrics, and Best Practices](https://agent-harness.ai/blog/ai-agent-monitoring-tools-metrics-and-best-practices/)
+
+Agent Harnessの記事に含まれる個別の改善率・閾値・比較値は、環境と評価方法へ依存するため、本書の推奨値としては使用していません。
 
 ---
 
